@@ -201,6 +201,20 @@ describe('MonitorSession', () => {
     expect(stalls[0].durationMs).toBeCloseTo(1500, -1)
   })
 
+  it('samples live latency only once playback has started', () => {
+    session = new MonitorSession(MASTER_URL, video)
+    const hls = mocks.FakeHls.instance
+    hls.latency = 600 // bogus value hls.js reports while currentTime is still 0
+    mocks.responses.set(LEVEL_URL, '#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4,\na.ts\n')
+    load(LEVEL_URL, { type: 'level', level: 0 })
+    vi.advanceTimersByTime(600)
+    expect(snapshot().samples.at(-1)?.liveEdgeDistance).toBeUndefined()
+
+    hls.latency = 8
+    video.dispatchEvent(new Event('playing'))
+    expect(snapshot().samples.at(-1)?.liveEdgeDistance).toBe(8)
+  })
+
   it('applies the requested variant once levels are known and rejects invalid ones', () => {
     const onVariantRejected = vi.fn()
     session = new MonitorSession(MASTER_URL, video, { variant: 5, onVariantRejected })

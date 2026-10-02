@@ -1,8 +1,11 @@
 import { useState } from 'react'
+import { BufferPanel } from '@/components/buffer-panel'
 import { CorsBanner } from '@/components/cors-banner'
 import { ErrorLog } from '@/components/error-log'
+import { LatencyPanel } from '@/components/latency-panel'
 import { NetworkTable } from '@/components/network-table'
 import { PlayerPanel } from '@/components/player-panel'
+import { PlaylistHealthPanel } from '@/components/playlist-health-panel'
 import { SegmentTimeline } from '@/components/segment-timeline'
 import { UrlForm } from '@/components/url-form'
 import { VariantsPanel } from '@/components/variants-panel'
@@ -49,23 +52,33 @@ function App() {
 
       {snapshot && <CorsBanner source={snapshot.source} />}
 
-      <div className={query.url ? 'grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]' : 'hidden'}>
-        <div className="flex flex-col gap-4">
+      {/* Always mounted so the <video> element survives URL changes. */}
+      <div className={query.url ? 'flex flex-col gap-4' : 'hidden'}>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
           <PlayerPanel videoRef={setVideo} source={snapshot?.source ?? null} />
           {snapshot && (
+            <div className="flex flex-col gap-4">
+              <BufferPanel samples={snapshot.samples} stalls={snapshot.stalls} />
+              <LatencyPanel samples={snapshot.samples} live={snapshot.source.live} />
+            </div>
+          )}
+        </div>
+        {snapshot && (
+          <>
             <VariantsPanel
               variants={snapshot.variants}
               selection={snapshot.selection}
               requested={query.variant}
               onSelect={(variant) => setQuery({ variant })}
             />
-          )}
-        </div>
-        <div className="flex flex-col gap-4">
-          {snapshot && <SegmentTimeline segments={snapshot.segments} />}
-          {snapshot && <NetworkTable segments={snapshot.segments} />}
-          <ErrorLog errors={snapshot?.errors ?? []} />
-        </div>
+            <SegmentTimeline segments={snapshot.segments} />
+            <div className="grid gap-4 xl:grid-cols-2">
+              <NetworkTable segments={snapshot.segments} />
+              <PlaylistHealthPanel playlists={snapshot.playlists} />
+            </div>
+            <ErrorLog errors={snapshot.errors} />
+          </>
+        )}
       </div>
     </div>
   )

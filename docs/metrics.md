@@ -56,3 +56,27 @@ Each media playlist load produces a `PlaylistRefresh`, tracked per role (`main:<
 | `changed` | False when the playlist came back with the same sequence and last SN (stale playlist). |
 | `missedSns` | SNs between the previous last SN and the new first SN. They were published and removed without the client ever seeing them. |
 | `endListAppeared` | ENDLIST is present now but was absent before (a live stream ended). |
+
+## Samples (every 500 ms, `MonitorSession.sample`)
+
+| Metric | Definition |
+| --- | --- |
+| Buffer ahead | End of the `video.buffered` range that contains `currentTime`, minus `currentTime` (0.1 s tolerance at the range start). 0 when the playhead is outside any buffered range. |
+| Behind live edge | `hls.latency`: the live edge (end of the live playlist) minus the playhead, in seconds. Live only, and only after the first `playing` event, because before that `currentTime` is 0 and the value is meaningless. |
+| Latency vs PDT | `(Date.now() − hls.playingDate) / 1000`. `playingDate` is the PROGRAM-DATE-TIME mapped to the playhead. This is glass-to-glass-ish latency from the packager's clock, so it is only correct if the client's clock agrees with the packager's. Absent when the playlist has no PDT. |
+
+## Stalls
+
+A stall starts on the `<video>` `waiting` event and ends on the next `playing` (or `seeking`).
+Durations are measured with `performance.now()`. The following are not stalls:
+
+- `waiting` before the first `playing` (startup).
+- `waiting` while `video.seeking` is true (user seeks).
+
+A stall still in progress has no `durationMs`. The chart extends it to the latest sample.
+
+## Charts
+
+Series colors are `--chart-1` (blue) and `--chart-2` (orange). Both were validated for CVD
+separation and contrast on the light and dark surfaces. Stall bands use `--status-error`, and the
+stall list next to the chart repeats each one in text, so color is never the only signal.

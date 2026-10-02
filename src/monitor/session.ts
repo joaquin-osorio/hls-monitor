@@ -339,7 +339,8 @@ export class MonitorSession {
       }
     }
     const sample: Sample = { t: now, bufferAhead }
-    if (this.source.live) {
+    // Before the first frame plays, currentTime is 0 and hls.latency is meaningless.
+    if (this.source.live && this.hasPlayed) {
       sample.liveEdgeDistance = hls.latency
       const playingDate = hls.playingDate
       if (playingDate) sample.pdtLatency = (Date.now() - playingDate.getTime()) / 1000
