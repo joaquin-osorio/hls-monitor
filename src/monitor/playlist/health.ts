@@ -1,0 +1,90 @@
+import type { MediaPlaylist } from './parse'
+
+/** Cap on how many missed sequence numbers a single refresh reports (e.g. after a sequence reset). */
+const MAX_MISSED_REPORTED = 1000
+
+export interface PlaylistRefresh {
+  /** `performance.now()` when the playlist finished loading. */
+  t: number
+  url: string
+  mediaSequence: number
+  /** SN of the last segment, or `mediaSequence - 1` for an empty playlist. */
+  lastSn: number
+  segmentCount: number
+  targetDuration?: number
+  endList: boolean
+  /** Time since the previous refresh of the same playlist; undefined on the first load. */
+  intervalMs?: number
+  /** How far MEDIA-SEQUENCE moved since the previous refresh (negative = sequence went backwards). */
+  mediaSequenceAdvance?: number
+  /** New segments appended since the previous refresh. */
+  newSegments?: number
+  /** False when the playlist came back identical (no new segments, same sequence). */
+  changed: boolean
+  /**
+   * SNs that were published and already removed between two refreshes, so the client could never
+   * have seen them: the refresh interval is too long for the playlist window.
+   */
+  missedSns: number[]
+  /** ENDLIST appeared on a playlist that had been refreshing without it (a live stream ended). */
+  endListAppeared: boolean
+}
+
+interface PlaylistState {
+  t: number
+  mediaSequence: number
+  lastSn: number
+  endList: boolean
+}
+
+/**
+ * Tracks consecutive refreshes of each media playlist and derives health signals from them.
+ *
+ * hls.js only refreshes the playlist of the active level, so a level coming back after a switch
+ * would look like it skipped minutes of segments. Callers must `forget(url)` a playlist when it
+ * stops being refreshed (e.g. on level switch) so its next load starts a fresh baseline.
+ */
+export class PlaylistHealthTracker {
+  private readonly states = new Map<string, PlaylistState>()
+
+  track(url: string, playlist: MediaPlaylist, t: number): PlaylistRefresh {
+    const lastSn = playlist.mediaSequence + playlist.segments.length - 1
+    const prev = this.states.get(url)
+    this.states.set(url, { t, mediaSequence: playlist.mediaSequence, lastSn, endList: playlist.endList })
+
+    const refresh: PlaylistRefresh = {
+      t,
+      url,
+      mediaSequence: playlist.mediaSequence,
+      lastSn,
+      segmentCount: playlist.segments.length,
+      targetDuration: playlist.targetDuration,
+      endList: playlist.endList,
+      changed: true,
+      missedSns: [],
+      endListAppeared: false,
+    }
+    if (!prev) return refresh
+
+    refresh.intervalMs = t - prev.t
+    refresh.mediaSequenceAdvance = playlist.mediaSequence - prev.mediaSequence
+    refresh.newSegments = Math.max(0, lastSn - prev.lastSn)
+    refresh.changed = lastSn !== prev.lastSn || playlist.mediaSequence !== prev.mediaSequence
+    refresh.endListAppeared = playlist.endList && !prev.endList
+
+    // Everything between the last SN we saw and the first SN still listed was never visible.
+    const firstUnseen = prev.lastSn + 1
+    const missedCount = Math.min(playlist.mediaSequence - firstUnseen, MAX_MISSED_REPORTED)
+    for (let i = 0; i < missedCount; i++) refresh.missedSns.push(firstUnseen + i)
+
+    return refresh
+  }
+
+  forget(url: string): void {
+    this.states.delete(url)
+  }
+
+  clear(): void {
+    this.states.clear()
+  }
+}
