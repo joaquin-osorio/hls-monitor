@@ -38,6 +38,7 @@ describe('TsAnalyzer', () => {
     const analyzer = new TsAnalyzer(() => worker)
     const results = Array.from({ length: 6 }, () => analyzer.analyze(new ArrayBuffer(188)))
     expect(results.filter((r) => r === null)).toHaveLength(2)
+    expect(analyzer.isBusy()).toBe(true)
     expect(worker.postMessage).toHaveBeenCalledTimes(4)
     const job = worker.postMessage.mock.calls[0][0] as TsJob
     worker.reply({ id: job.id, ok: true, analysis: ANALYSIS })

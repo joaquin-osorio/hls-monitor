@@ -6,6 +6,8 @@ const MAX_MISSED_REPORTED = 1000
 export interface PlaylistRefresh {
   /** `performance.now()` when the playlist finished loading. */
   t: number
+  /** Tracking key, e.g. `main:2` (level 2) or `audio:0`. */
+  key: string
   url: string
   mediaSequence: number
   /** SN of the last segment, or `mediaSequence - 1` for an empty playlist. */
@@ -41,19 +43,22 @@ interface PlaylistState {
  * Tracks consecutive refreshes of each media playlist and derives health signals from them.
  *
  * hls.js only refreshes the playlist of the active level, so a level coming back after a switch
- * would look like it skipped minutes of segments. Callers must `forget(url)` a playlist when it
+ * would look like it skipped minutes of segments. Callers must `forget(key)` a playlist when it
  * stops being refreshed (e.g. on level switch) so its next load starts a fresh baseline.
+ * Playlists are keyed by role (`main:<level>`) rather than URL, because LL-HLS delivery
+ * directives and token rotation can change the URL of the same playlist between refreshes.
  */
 export class PlaylistHealthTracker {
   private readonly states = new Map<string, PlaylistState>()
 
-  track(url: string, playlist: MediaPlaylist, t: number): PlaylistRefresh {
+  track(key: string, url: string, playlist: MediaPlaylist, t: number): PlaylistRefresh {
     const lastSn = playlist.mediaSequence + playlist.segments.length - 1
-    const prev = this.states.get(url)
-    this.states.set(url, { t, mediaSequence: playlist.mediaSequence, lastSn, endList: playlist.endList })
+    const prev = this.states.get(key)
+    this.states.set(key, { t, mediaSequence: playlist.mediaSequence, lastSn, endList: playlist.endList })
 
     const refresh: PlaylistRefresh = {
       t,
+      key,
       url,
       mediaSequence: playlist.mediaSequence,
       lastSn,
@@ -80,8 +85,8 @@ export class PlaylistHealthTracker {
     return refresh
   }
 
-  forget(url: string): void {
-    this.states.delete(url)
+  forget(key: string): void {
+    this.states.delete(key)
   }
 
   clear(): void {

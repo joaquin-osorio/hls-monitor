@@ -35,8 +35,13 @@ export class TsAnalyzer {
     }
   }
 
+  /** Check before copying a segment: when busy, `analyze` would drop it anyway. */
+  isBusy(): boolean {
+    return this.pending.size >= MAX_IN_FLIGHT
+  }
+
   analyze(buffer: ArrayBuffer): Promise<TsAnalysis> | null {
-    if (this.pending.size >= MAX_IN_FLIGHT) return null
+    if (this.isBusy()) return null
     const id = this.nextId++
     const promise = new Promise<TsAnalysis>((resolve, reject) => this.pending.set(id, { resolve, reject }))
     const job: TsJob = { id, buffer }
