@@ -3,6 +3,7 @@ import { CorsBanner } from '@/components/cors-banner'
 import { ErrorLog } from '@/components/error-log'
 import { PlayerPanel } from '@/components/player-panel'
 import { UrlForm } from '@/components/url-form'
+import { VariantsPanel } from '@/components/variants-panel'
 import { useMonitor } from '@/hooks/use-monitor'
 import { useQueryState } from '@/hooks/use-query-state'
 
@@ -49,6 +50,14 @@ function App() {
       <div className={query.url ? 'grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]' : 'hidden'}>
         <div className="flex flex-col gap-4">
           <PlayerPanel videoRef={setVideo} source={snapshot?.source ?? null} />
+          {snapshot && (
+            <VariantsPanel
+              variants={snapshot.variants}
+              selection={snapshot.selection}
+              requested={query.variant}
+              onSelect={(variant) => setQuery({ variant })}
+            />
+          )}
         </div>
         <div className="flex flex-col gap-4">
           <ErrorLog errors={snapshot?.errors ?? []} />
