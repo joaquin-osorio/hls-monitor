@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { CorsBanner } from '@/components/cors-banner'
 import { ErrorLog } from '@/components/error-log'
+import { NetworkTable } from '@/components/network-table'
 import { PlayerPanel } from '@/components/player-panel'
+import { SegmentTimeline } from '@/components/segment-timeline'
 import { UrlForm } from '@/components/url-form'
 import { VariantsPanel } from '@/components/variants-panel'
 import { useMonitor } from '@/hooks/use-monitor'
@@ -60,6 +62,8 @@ function App() {
           )}
         </div>
         <div className="flex flex-col gap-4">
+          {snapshot && <SegmentTimeline segments={snapshot.segments} />}
+          {snapshot && <NetworkTable segments={snapshot.segments} />}
           <ErrorLog errors={snapshot?.errors ?? []} />
         </div>
       </div>

@@ -17,6 +17,10 @@
     --color-sidebar-foreground: var(--sidebar-foreground);
     --color-sidebar: var(--sidebar);
     --color-chart-5: var(--chart-5);
+    --color-status-ok: var(--status-ok);
+    --color-status-slow: var(--status-slow);
+    --color-status-error: var(--status-error);
+    --color-status-gap: var(--status-gap);
     --color-chart-4: var(--chart-4);
     --color-chart-3: var(--chart-3);
     --color-chart-2: var(--chart-2);
@@ -81,6 +85,10 @@
     --sidebar-accent-foreground: oklch(0.205 0 0);
     --sidebar-border: oklch(0.922 0 0);
     --sidebar-ring: oklch(0.708 0 0);
+    --status-ok: oklch(0.62 0.15 150);
+    --status-slow: oklch(0.75 0.16 75);
+    --status-error: oklch(0.58 0.22 27);
+    --status-gap: oklch(0.55 0.12 290);
 }
 
 .dark {
@@ -115,6 +123,10 @@
     --sidebar-accent-foreground: oklch(0.985 0 0);
     --sidebar-border: oklch(1 0 0 / 10%);
     --sidebar-ring: oklch(0.556 0 0);
+    --status-ok: oklch(0.7 0.15 150);
+    --status-slow: oklch(0.82 0.16 80);
+    --status-error: oklch(0.66 0.21 25);
+    --status-gap: oklch(0.65 0.13 290);
 }
 
 @layer base {
