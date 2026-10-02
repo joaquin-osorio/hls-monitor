@@ -7,6 +7,7 @@ import { NetworkTable } from '@/components/network-table'
 import { PlayerPanel } from '@/components/player-panel'
 import { PlaylistHealthPanel } from '@/components/playlist-health-panel'
 import { SegmentTimeline } from '@/components/segment-timeline'
+import { SpecChecksPanel } from '@/components/spec-checks-panel'
 import { UrlForm } from '@/components/url-form'
 import { VariantsPanel } from '@/components/variants-panel'
 import { useMonitor } from '@/hooks/use-monitor'
@@ -76,7 +77,10 @@ function App() {
               <NetworkTable segments={snapshot.segments} />
               <PlaylistHealthPanel playlists={snapshot.playlists} />
             </div>
-            <ErrorLog errors={snapshot.errors} />
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+              <SpecChecksPanel findings={snapshot.findings} />
+              <ErrorLog errors={snapshot.errors} />
+            </div>
           </>
         )}
       </div>
