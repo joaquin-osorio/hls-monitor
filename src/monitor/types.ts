@@ -53,6 +53,12 @@ export interface Sample {
   liveEdgeDistance?: number
   /** Seconds between wall clock and the PROGRAM-DATE-TIME of the playhead. Client-clock dependent. */
   pdtLatency?: number
+  /** Cumulative `getVideoPlaybackQuality().droppedVideoFrames`; reset by the browser on media attach. */
+  droppedFrames?: number
+  /** Cumulative `getVideoPlaybackQuality().totalVideoFrames`. */
+  totalFrames?: number
+  /** `hls.currentLevel` at sample time (-1 before the first switch). */
+  level?: number
 }
 
 export interface Stall {

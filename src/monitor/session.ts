@@ -338,7 +338,12 @@ export class MonitorSession {
         break
       }
     }
-    const sample: Sample = { t: now, bufferAhead }
+    const sample: Sample = { t: now, bufferAhead, level: hls.currentLevel }
+    const quality = video.getVideoPlaybackQuality?.()
+    if (quality) {
+      sample.droppedFrames = quality.droppedVideoFrames
+      sample.totalFrames = quality.totalVideoFrames
+    }
     // Before the first frame plays, currentTime is 0 and hls.latency is meaningless.
     if (this.source.live && this.hasPlayed) {
       sample.liveEdgeDistance = hls.latency

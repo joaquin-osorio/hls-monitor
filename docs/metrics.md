@@ -65,6 +65,20 @@ Each media playlist load produces a `PlaylistRefresh`, tracked per role (`main:<
 | Behind live edge | `hls.latency`: the live edge (end of the live playlist) minus the playhead, in seconds. Live only, and only after the first `playing` event, because before that `currentTime` is 0 and the value is meaningless. |
 | Latency vs PDT | `(Date.now() − hls.playingDate) / 1000`. `playingDate` is the PROGRAM-DATE-TIME mapped to the playhead. This is glass-to-glass-ish latency from the packager's clock, so it is only correct if the client's clock agrees with the packager's. Absent when the playlist has no PDT. |
 
+## Dropped frames (`src/monitor/frames.ts`)
+
+Each sample stores the cumulative `droppedVideoFrames` / `totalVideoFrames` from
+`video.getVideoPlaybackQuality()` and `hls.currentLevel`. The panel works on deltas between
+consecutive samples:
+
+- **Dropped/s** = Δdropped / Δt.
+- **Per level**: each delta is attributed to the level playing at the later sample, so frames
+  around a switch may land on the neighbouring level (one 500 ms sample of slack).
+- A counter that goes backwards means the browser reset them (the media load algorithm runs on
+  every `attachMedia`). That sample becomes a new baseline; no negative delta is produced.
+- Browsers may skip rendering in a hidden tab or when the video is off screen, and some count
+  those frames as dropped. Read the numbers with the tab visible.
+
 ## Stalls
 
 A stall starts on the `<video>` `waiting` event and ends on the next `playing` (or `seeking`).

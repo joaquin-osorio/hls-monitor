@@ -215,6 +215,14 @@ describe('MonitorSession', () => {
     expect(snapshot().samples.at(-1)?.liveEdgeDistance).toBe(8)
   })
 
+  it('samples frame counters and the playing level', () => {
+    session = new MonitorSession(MASTER_URL, video)
+    mocks.FakeHls.instance.currentLevel = 2
+    Object.assign(video, { getVideoPlaybackQuality: () => ({ droppedVideoFrames: 3, totalVideoFrames: 120 }) })
+    vi.advanceTimersByTime(600)
+    expect(snapshot().samples.at(-1)).toMatchObject({ droppedFrames: 3, totalFrames: 120, level: 2 })
+  })
+
   it('applies the requested variant once levels are known and rejects invalid ones', () => {
     const onVariantRejected = vi.fn()
     session = new MonitorSession(MASTER_URL, video, { variant: 5, onVariantRejected })

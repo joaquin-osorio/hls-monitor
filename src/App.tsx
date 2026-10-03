@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { BufferPanel } from '@/components/buffer-panel'
 import { CorsBanner } from '@/components/cors-banner'
+import { DroppedFramesPanel } from '@/components/dropped-frames-panel'
 import { ErrorLog } from '@/components/error-log'
 import { LatencyPanel } from '@/components/latency-panel'
 import { NetworkTable } from '@/components/network-table'
@@ -61,6 +62,7 @@ function App() {
             <div className="flex flex-col gap-4">
               <BufferPanel samples={snapshot.samples} stalls={snapshot.stalls} />
               <LatencyPanel samples={snapshot.samples} live={snapshot.source.live} />
+              <DroppedFramesPanel samples={snapshot.samples} />
             </div>
           )}
         </div>
