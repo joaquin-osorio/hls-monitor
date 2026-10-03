@@ -302,6 +302,12 @@ describe('MonitorSession', () => {
     expect(snapshot().samples.at(-1)).toMatchObject({ droppedFrames: 3, totalFrames: 120, level: 2 })
   })
 
+  it('keeps samples for a full two-hour event', () => {
+    session = new MonitorSession(MASTER_URL, video)
+    vi.advanceTimersByTime(2 * 60 * 60 * 1000)
+    expect(snapshot().samples.length).toBeGreaterThanOrEqual(14_000)
+  })
+
   it('applies the requested variant once levels are known and rejects invalid ones', () => {
     const onVariantRejected = vi.fn()
     session = new MonitorSession(MASTER_URL, video, { variant: 5, onVariantRejected })

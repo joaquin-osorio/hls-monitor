@@ -6,8 +6,8 @@ import type { TsAnalysis, TsPidStats, TsStream } from './ts/parse-ts'
 /** A segment is `slow` when its download takes at least this fraction of its own duration. */
 export const SLOW_RATIO = 0.5
 
-/** Upper bound on segment records kept (the 30 min window usually binds first). */
-const SEGMENT_CAPACITY = 5000
+/** Upper bound on segment records kept: 120 min of 1 s segments on two tracks, roughly. */
+const SEGMENT_CAPACITY = 15_000
 
 export type SegmentStatus = 'ok' | 'slow' | 'error' | 'gap'
 
@@ -85,7 +85,7 @@ function statusOf(req: RequestRecord, ratio: number | undefined): SegmentStatus 
   return ratio !== undefined && ratio >= SLOW_RATIO ? 'slow' : 'ok'
 }
 
-/** Per-segment view of fragment requests, kept for the last 30 minutes. */
+/** Per-segment view of fragment requests, kept for the retention window (`RETENTION_MS`). */
 export class SegmentLog {
   private readonly buf = new TimeWindowBuffer<SegmentRecord>(SEGMENT_CAPACITY)
 

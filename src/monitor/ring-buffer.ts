@@ -1,5 +1,8 @@
-/** Default retention window for every metric series: the last 30 minutes. */
-export const RETENTION_MS = 30 * 60 * 1000
+/**
+ * Default retention window for every metric series: the last 120 minutes, long enough for a full
+ * sports event. Buffer capacities are sized so this window, not the capacity, usually binds first.
+ */
+export const RETENTION_MS = 120 * 60 * 1000
 
 /**
  * Fixed-capacity circular buffer that also evicts entries older than a time window.

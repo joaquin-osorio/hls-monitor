@@ -31,6 +31,16 @@ describe('LoudnessMeter', () => {
     expect(info.series).toEqual([{ t: 1000, momentary: expect.closeTo(-20), shortTerm: expect.closeTo(-20) }])
   })
 
+  it('keeps two hours of chart points', async () => {
+    const meter = new LoudnessMeter({ muted: false, volume: 1, paused: false }, Promise.resolve(fakeGraph().graph), () => {})
+    await vi.waitFor(() => expect(meter.info().status).toBe('measuring'))
+    const twoHours = 2 * 60 * 60 * 1000
+    for (let t = 0; t <= twoHours; t += 500) meter.sample(t)
+    const { series } = meter.info()
+    expect(series[0].t).toBe(0)
+    expect(series.at(-1)?.t).toBe(twoHours)
+  })
+
   it('ignores blocks while the element is muted, turned down or paused', async () => {
     const media = { muted: false, volume: 1, paused: false }
     const { graph, send } = fakeGraph()

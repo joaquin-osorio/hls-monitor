@@ -2,7 +2,8 @@ import type { RequestRecord } from './loader'
 import { TimeWindowBuffer } from './ring-buffer'
 import { networkMetrics } from './segments'
 
-const PART_CAPACITY = 3000
+/** Aggressive LL-HLS (several parts/s per track) can still hit this before `RETENTION_MS`. */
+const PART_CAPACITY = 20_000
 
 export interface PartRecord {
   /** `performance.now()` of the first attempt. */
@@ -29,7 +30,7 @@ export interface PartRecord {
   bytes?: number
 }
 
-/** LL-HLS part requests, one record per (track, level, SN, part), kept for the last 30 minutes. */
+/** LL-HLS part requests, one record per (track, level, SN, part), kept for the retention window (`RETENTION_MS`). */
 export class PartLog {
   private readonly buf = new TimeWindowBuffer<PartRecord>(PART_CAPACITY)
 

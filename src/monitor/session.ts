@@ -22,7 +22,7 @@ import { PartLog } from './parts'
 import { PlaylistHealthTracker, type PlaylistRefresh } from './playlist/health'
 import { checkLlHls, LlHlsTracker, summarizeLl } from './playlist/ll-hls'
 import { parsePlaylist, PlaylistParseError, type MediaPlaylist } from './playlist/parse'
-import { TimeWindowBuffer } from './ring-buffer'
+import { RETENTION_MS, TimeWindowBuffer } from './ring-buffer'
 import { measuredBitrates, SegmentLog, segmentKey } from './segments'
 import { ThrottledStore } from './store'
 import { TsAnalyzer } from './ts/ts-client'
@@ -30,6 +30,9 @@ import type { MonitorSnapshot, Sample, SnapshotKey, SourceInfo, Stall, VariantIn
 
 /** How often buffer and latency are sampled. */
 export const SAMPLE_INTERVAL_MS = 500
+
+/** Room for one sample per tick over the whole retention window, plus a margin for timer drift. */
+const SAMPLE_CAPACITY = Math.ceil(RETENTION_MS / SAMPLE_INTERVAL_MS) + 600
 
 export interface MonitorSessionOptions {
   /** Initial variant from `?variant=`. Applied once levels are known. */
@@ -62,8 +65,8 @@ export class MonitorSession {
   private readonly shaper = new NetworkShaper()
   private readonly segments = new SegmentLog()
   private readonly parts = new PartLog()
-  private readonly playlists = new TimeWindowBuffer<PlaylistRefresh>(4000)
-  private readonly samples = new TimeWindowBuffer<Sample>(4000)
+  private readonly playlists = new TimeWindowBuffer<PlaylistRefresh>(15_000)
+  private readonly samples = new TimeWindowBuffer<Sample>(SAMPLE_CAPACITY)
   private readonly stalls = new TimeWindowBuffer<Stall>(1000)
   private readonly errors = new TimeWindowBuffer<MonitorError>(1000)
   private readonly findings = new FindingsLog()

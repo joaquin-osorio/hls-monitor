@@ -5,6 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { formatBitrate, formatBytes, formatClock, formatMs } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { EXTINF_TOLERANCE_S } from '@/monitor/checks'
+import { RETENTION_MS } from '@/monitor/ring-buffer'
 import type { SegmentRecord } from '@/monitor/segments'
 import { formatPid, pidLabel, streamTypeName } from '@/monitor/ts/stream-types'
 import type { VariantInfo } from '@/monitor/types'
@@ -170,7 +171,7 @@ export function SegmentInspector({ segmentKey, record, variants, onClose }: Segm
                 {record.track} · level {record.level} · {formatClock(record.t)}
               </>
             ) : (
-              'This segment left the 30-minute retention window.'
+              `This segment left the ${RETENTION_MS / 60_000}-minute retention window.`
             )}
           </SheetDescription>
         </SheetHeader>

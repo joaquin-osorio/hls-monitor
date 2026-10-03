@@ -33,7 +33,8 @@ const finite = (v: number) => (Number.isFinite(v) ? v : undefined)
  */
 export class LoudnessMeter {
   private readonly analyzer = new LoudnessAnalyzer()
-  private readonly series = new TimeWindowBuffer<LoudnessPoint>(4000)
+  // One point per session sampling tick (500 ms) over the 120 min retention window, plus margin.
+  private readonly series = new TimeWindowBuffer<LoudnessPoint>(15_000)
   private status: LoudnessInfo['status'] = 'starting'
   private pausedReason: LoudnessPause | undefined
   private error: string | undefined

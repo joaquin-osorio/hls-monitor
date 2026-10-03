@@ -45,9 +45,17 @@ AudioWorklet ──100 ms blocks──▶ LoudnessMeter (only while enabled)
   cloned, to the TS worker and dropped after parsing. When the worker has `MAX_IN_FLIGHT` jobs, new
   segments are skipped before copying. fMP4 and encrypted (AES-128) segments fail the TS sniff and
   are never copied.
-- **Bounded memory.** Every time series lives in a `TimeWindowBuffer`, which keeps the last 30
-  minutes (`RETENTION_MS`) and also has a hard capacity. Findings are deduplicated by key, so they
-  stay bounded too.
+- **Bounded memory.** Every time series lives in a `TimeWindowBuffer`, which keeps the last 120
+  minutes (`RETENTION_MS`, sized for a full sports event) and also has a hard capacity. Findings
+  are deduplicated by key, so they stay bounded too.
+  - Capacities are sized so the window binds first: samples and loudness points are 2/s (~14 400
+    in 120 min), segments and playlist refreshes get 15 000 (1 s segments on two tracks), parts
+    20 000. Very aggressive LL-HLS can still fill `parts` before 120 min.
+  - Rough heap cost at full retention: samples and loudness ~1–2 MB each, `SegmentRecord`s
+    (~1–2 KB with PIDs/headers) 2–15 MB, playlists/parts a few MB. Under 30 MB worst case.
+  - The cost that does scale badly is rendering: Recharts redraws every chart on each 500 ms
+    refresh, so `TimeSeriesChart` thins its data with `downsample` (≤ 1000 points, per-bucket
+    min/max of every key plus gap points, so spikes and holes survive).
 - **Render throttle.** Collectors only call `store.markDirty(slice)`. The store rebuilds dirty
   slices at most every 500 ms inside `requestAnimationFrame`, and leaves clean slices
   referentially equal. In a hidden tab, rAF pauses, so the UI stops refreshing while collection
@@ -152,7 +160,7 @@ per-segment details (PMT streams, PIDs, response headers) as appendices.
   `performance.timeOrigin`, the generation time, the throttle profile, the requested variant and
   whether the loudness meter is on. That keeps tests deterministic and the engine free of React
   state.
-- "Everything" means what the engine still holds: the 30-minute retention window and the hard
+- "Everything" means what the engine still holds: the 120-minute retention window and the hard
   buffer capacities. The report states the covered range. Loudness data only exists while the
   meter is on; stopping the meter discards it.
 - Times are ISO 8601 UTC (`timeOrigin + t`), not the local clock format the panels use, so a
