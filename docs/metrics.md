@@ -3,6 +3,10 @@
 All durations come from `performance.now()` timestamps. hls.js `LoaderStats` use the same clock.
 Wall-clock time appears only for display (`performance.timeOrigin + t`) and for PDT latency.
 
+When network simulation is on, every request timing below (TTFB, total, throughput, ratio,
+playlist intervals, part hold) is the **simulated** one: the loader rewrites `LoaderStats`
+before the monitor records them. See `docs/architecture.md`.
+
 ## Per-segment network (`src/monitor/segments.ts`)
 
 Each segment record folds every attempt hls.js made for one `(track, level, SN)`. Metrics come

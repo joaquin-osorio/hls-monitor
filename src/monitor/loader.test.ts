@@ -6,7 +6,8 @@ import type {
   LoaderContext,
   LoaderStats,
 } from 'hls.js'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { NetworkShaper } from './network-shaper'
 import { createMonitoringLoader, extractHeaders, type LoaderSink, parseDeliveryDirectives, stripDeliveryDirectives } from './loader'
 
 function stats(start: number, first: number, end: number, loaded: number): LoaderStats {
@@ -40,13 +41,13 @@ class FakeLoader implements Loader<LoaderContext> {
   destroy() {}
 }
 
-function setup() {
+function setup(shaper?: NetworkShaper) {
   const sink = {
     onRequest: vi.fn<LoaderSink['onRequest']>(),
     onPlaylist: vi.fn<LoaderSink['onPlaylist']>(),
     onTsSegment: vi.fn<LoaderSink['onTsSegment']>(),
   }
-  const Monitoring = createMonitoringLoader(FakeLoader, sink)
+  const Monitoring = createMonitoringLoader(FakeLoader, sink, shaper)
   const loader = new Monitoring({} as HlsConfig)
   const hlsCallbacks = { onSuccess: vi.fn(), onError: vi.fn(), onTimeout: vi.fn() }
   return { sink, loader, hlsCallbacks }
@@ -194,5 +195,63 @@ describe('stripDeliveryDirectives', () => {
   it('removes only _HLS_ parameters', () => {
     expect(stripDeliveryDirectives('https://cdn/a.m3u8?_HLS_msn=5&_HLS_part=1')).toBe('https://cdn/a.m3u8')
     expect(stripDeliveryDirectives('https://cdn/a.m3u8?token=x&_HLS_skip=YES')).toBe('https://cdn/a.m3u8?token=x')
+  })
+})
+
+describe('createMonitoringLoader with throttling', () => {
+  afterEach(() => vi.useRealTimers())
+
+  const throttled = (downKbps: number, latencyMs: number) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance'] })
+    const shaper = new NetworkShaper()
+    shaper.set({ downKbps, latencyMs })
+    return setup(shaper)
+  }
+  const policy = (ttfb: number, total: number) =>
+    ({ loadPolicy: { maxTimeToFirstByteMs: ttfb, maxLoadTimeMs: total } }) as unknown as LoaderConfiguration
+
+  it('holds the response until its simulated arrival and rewrites the stats hls.js reads', () => {
+    const { sink, loader, hlsCallbacks } = throttled(1000, 100)
+    loader.load(fragContext(), policy(10_000, 20_000), hlsCallbacks)
+    const s = stats(0, 5, 10, 125_000) // 1 Mbit at 1000 kbit/s = 1000 ms
+    FakeLoader.last.callbacks.onSuccess({ url: '', data: tsBytes(), code: 200 }, s, FakeLoader.last.context!, null)
+
+    vi.advanceTimersByTime(1099)
+    expect(hlsCallbacks.onSuccess).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    expect(hlsCallbacks.onSuccess).toHaveBeenCalledOnce()
+    expect(s.loading).toEqual({ start: 0, first: 100, end: 1100 })
+    expect(s.bwEstimate).toBeCloseTo(1_000_000)
+    expect(sink.onRequest).toHaveBeenCalledWith(expect.objectContaining({ first: 100, end: 1100 }))
+  })
+
+  it('advances stats to the simulated progress while holding, for hls.js ABR abandon checks', () => {
+    const { loader, hlsCallbacks } = throttled(1000, 100)
+    loader.load(fragContext(), policy(10_000, 20_000), hlsCallbacks)
+    const s = stats(0, 5, 10, 125_000) // body flows from 100 to 1100 ms
+    FakeLoader.last.callbacks.onSuccess({ url: '', data: tsBytes(), code: 200 }, s, FakeLoader.last.context!, null)
+    expect([s.loaded, s.loading.first, s.loading.end]).toEqual([0, 0, 0])
+    vi.advanceTimersByTime(600)
+    expect(s.loaded).toBe(62_500)
+    expect(s.loading.first).toBe(100)
+  })
+
+  it('reports a timeout when the simulated transfer exceeds the load policy', () => {
+    const { sink, loader, hlsCallbacks } = throttled(100, 0)
+    loader.load(fragContext(), policy(10_000, 2000), hlsCallbacks)
+    FakeLoader.last.callbacks.onSuccess({ url: '', data: tsBytes(), code: 200 }, stats(0, 5, 10, 125_000), FakeLoader.last.context!, null)
+    vi.advanceTimersByTime(2000)
+    expect(hlsCallbacks.onSuccess).not.toHaveBeenCalled()
+    expect(hlsCallbacks.onTimeout).toHaveBeenCalledOnce()
+    expect(sink.onRequest.mock.calls.map(([r]) => [r.outcome, r.end])).toEqual([['timeout', 2000]])
+  })
+
+  it('drops a held response when hls.js aborts the request', () => {
+    const { loader, hlsCallbacks } = throttled(1000, 0)
+    loader.load(fragContext(), policy(10_000, 20_000), hlsCallbacks)
+    FakeLoader.last.callbacks.onSuccess({ url: '', data: tsBytes(), code: 200 }, stats(0, 5, 10, 125_000), FakeLoader.last.context!, null)
+    loader.abort()
+    vi.advanceTimersByTime(5000)
+    expect(hlsCallbacks.onSuccess).not.toHaveBeenCalled()
   })
 })

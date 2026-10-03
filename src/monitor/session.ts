@@ -15,6 +15,7 @@ import type { CodecFamily } from './codecs'
 import { isMixedContent, probeCors } from './cors'
 import { classifyHlsError, type MonitorError } from './errors'
 import { createMonitoringLoader, stripDeliveryDirectives, type LoaderSink, type RequestRecord } from './loader'
+import { NetworkShaper, type ThrottleProfile } from './network-shaper'
 import { PartLog } from './parts'
 import { PlaylistHealthTracker, type PlaylistRefresh } from './playlist/health'
 import { checkLlHls, LlHlsTracker, summarizeLl } from './playlist/ll-hls'
@@ -55,6 +56,7 @@ export class MonitorSession {
   private destroyed = false
 
   private source: SourceInfo
+  private readonly shaper = new NetworkShaper()
   private readonly segments = new SegmentLog()
   private readonly parts = new PartLog()
   private readonly playlists = new TimeWindowBuffer<PlaylistRefresh>(4000)
@@ -86,7 +88,7 @@ export class MonitorSession {
 
     this.analyzer = new TsAnalyzer()
     this.hls = new Hls({
-      loader: createMonitoringLoader(Hls.DefaultConfig.loader, this.sink),
+      loader: createMonitoringLoader(Hls.DefaultConfig.loader, this.sink, this.shaper),
     })
     this.hls.on(Events.MANIFEST_PARSED, this.onManifestParsed)
     this.hls.on(Events.LEVEL_SWITCHING, this.onLevelSwitching)
@@ -119,6 +121,11 @@ export class MonitorSession {
       this.options.onVariantRejected?.()
     }
     this.store.markDirty('selection')
+  }
+
+  /** Simulates a slower network for every hls.js request (null turns it off). */
+  setThrottle(profile: ThrottleProfile | null): void {
+    this.shaper.set(profile)
   }
 
   destroy(): void {

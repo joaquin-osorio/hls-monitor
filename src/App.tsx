@@ -13,10 +13,12 @@ import { PlaylistHealthPanel } from '@/components/playlist-health-panel'
 import { SegmentInspector } from '@/components/segment-inspector'
 import { SegmentTimeline } from '@/components/segment-timeline'
 import { SpecChecksPanel } from '@/components/spec-checks-panel'
+import { ThrottleControl } from '@/components/throttle-control'
 import { UrlForm } from '@/components/url-form'
 import { VariantsPanel } from '@/components/variants-panel'
 import { useMonitor } from '@/hooks/use-monitor'
 import { useQueryState } from '@/hooks/use-query-state'
+import type { ThrottleProfile } from '@/monitor/network-shaper'
 
 const SAMPLE_STREAMS = [
   { label: 'VOD · TS · multi-variant (Mux)', url: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8' },
@@ -30,7 +32,15 @@ const SAMPLE_STREAMS = [
 function App() {
   const [query, setQuery] = useQueryState()
   const [video, setVideo] = useState<HTMLVideoElement | null>(null)
-  const { snapshot } = useMonitor(query.url, video, query.variant, () => setQuery({ variant: 'auto' }))
+  // Not in the URL on purpose: a shared link should not silently throttle the recipient.
+  const [throttle, setThrottle] = useState<ThrottleProfile | null>(null)
+  const { snapshot } = useMonitor({
+    url: query.url,
+    video,
+    variant: query.variant,
+    onVariantRejected: () => setQuery({ variant: 'auto' }),
+    throttle,
+  })
   // Scoped to the URL it was opened for, so a new stream closes the inspector.
   const [inspect, setInspect] = useState<{ url: string | null; key: string } | null>(null)
   const inspectedKey = inspect && inspect.url === query.url ? inspect.key : null
@@ -65,7 +75,10 @@ function App() {
       {/* Always mounted so the <video> element survives URL changes. */}
       <div className={query.url ? 'flex flex-col gap-4' : 'hidden'}>
         <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-          <PlayerPanel videoRef={setVideo} source={snapshot?.source ?? null} />
+          <div className="flex flex-col gap-4">
+            <PlayerPanel videoRef={setVideo} source={snapshot?.source ?? null} throttle={throttle} />
+            <ThrottleControl value={throttle} onChange={setThrottle} />
+          </div>
           {snapshot && (
             <div className="flex flex-col gap-4">
               <BufferPanel samples={snapshot.samples} stalls={snapshot.stalls} />

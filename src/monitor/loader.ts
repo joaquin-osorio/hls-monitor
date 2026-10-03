@@ -8,6 +8,7 @@ import type {
   LoaderStats,
   PlaylistLoaderContext,
 } from 'hls.js'
+import type { NetworkShaper, ShapeLimits, Shaped } from './network-shaper'
 import { looksLikeTs } from './ts/parse-ts'
 
 export type LoaderConstructor = new (config: HlsConfig) => Loader<LoaderContext>
@@ -176,6 +177,15 @@ function safely(fn: () => void): void {
   }
 }
 
+/** How often the stats of a held response are advanced to the simulated progress. */
+const PROGRESS_INTERVAL_MS = 100
+
+/** hls.js load-policy limits, ignoring missing or infinite values. */
+function limitsOf(config: LoaderConfiguration): ShapeLimits {
+  const finite = (v: number | undefined) => (v !== undefined && Number.isFinite(v) && v > 0 ? v : undefined)
+  return { ttfbMs: finite(config.loadPolicy?.maxTimeToFirstByteMs), totalMs: finite(config.loadPolicy?.maxLoadTimeMs) }
+}
+
 /**
  * Returns an hls.js loader class that delegates every request to `Base` (normally
  * `Hls.DefaultConfig.loader`) and reports each attempt to `sink` before handing the result back to
@@ -184,10 +194,21 @@ function safely(fn: () => void): void {
  *
  * Segment bytes are copied synchronously inside `onSuccess`, before hls.js gets the response,
  * because hls.js may transfer (detach) the original buffer to its transmuxer worker.
+ *
+ * With an active `shaper`, each response is held until its simulated arrival time and its
+ * `LoaderStats` are rewritten in place: hls.js keeps a reference to them (`frag.stats`,
+ * `part.stats`) and its ABR abandon rules read `loaded` and `loading.first` while a fragment is
+ * in flight, so they are advanced to the simulated progress during the hold. If ABR abandons the
+ * load, `abort()` drops the held response. A transfer that would exceed the hls.js load policy is
+ * reported as a timeout instead.
  */
-export function createMonitoringLoader(Base: LoaderConstructor, sink: LoaderSink): LoaderConstructor {
+export function createMonitoringLoader(Base: LoaderConstructor, sink: LoaderSink, shaper?: NetworkShaper): LoaderConstructor {
   return class MonitoringLoader implements Loader<LoaderContext> {
     private readonly inner: Loader<LoaderContext>
+    /** A response held back by the shaper. */
+    private held:
+      | { timer: ReturnType<typeof setTimeout>; progress?: ReturnType<typeof setInterval>; shaped?: Shaped }
+      | undefined
 
     constructor(config: HlsConfig) {
       this.inner = new Base(config)
@@ -210,42 +231,112 @@ export function createMonitoringLoader(Base: LoaderConstructor, sink: LoaderSink
     getResponseHeader = (name: string): string | null => this.inner.getResponseHeader?.(name) ?? null
 
     destroy(): void {
+      this.cancelPending()
       this.inner.destroy()
     }
 
     abort(): void {
+      this.cancelPending()
       this.inner.abort()
+    }
+
+    private cancelPending(): void {
+      const held = this.held
+      if (!held) return
+      clearTimeout(held.timer)
+      clearInterval(held.progress)
+      this.held = undefined
+      if (held.shaped) shaper?.release(held.shaped, performance.now())
+    }
+
+    /**
+     * Holds a response until `at`, advancing `stats` to the simulated progress meanwhile, then
+     * runs `fn`. Runs `fn` right away if `at` is not in the future.
+     */
+    private hold(shaped: Shaped, at: number, stats: LoaderStats, fn: () => void): void {
+      const bytes = stats.loaded
+      const advance = () => {
+        const now = performance.now()
+        stats.loading.first = now >= shaped.first ? shaped.first : 0
+        stats.loaded = shaper!.progress(shaped, bytes, now)
+      }
+      const delay = at - performance.now()
+      if (delay <= 0) return fn()
+      stats.loading.end = 0
+      advance()
+      const progress = setInterval(advance, PROGRESS_INTERVAL_MS)
+      const timer = setTimeout(() => {
+        clearInterval(progress)
+        this.held = undefined
+        fn()
+      }, delay)
+      this.held = { timer, progress, shaped }
     }
 
     load(context: LoaderContext, config: LoaderConfiguration, callbacks: LoaderCallbacks<LoaderContext>): void {
       const { onAbort } = callbacks
+      const throttled = () => !!shaper?.profile
       const wrapped: LoaderCallbacks<LoaderContext> = {
         ...callbacks,
         onSuccess: (response, stats, ctx, networkDetails) => {
-          safely(() => {
-            const record = buildRecord(ctx, stats, 'success', response.code)
-            if (record.kind === 'fragment') record.headers = extractHeaders(networkDetails)
-            const data = response.data
-            sink.onRequest(record)
-            if (typeof data === 'string' && record.kind !== 'fragment' && record.kind !== 'key') {
-              sink.onPlaylist(record, data, ctx as PlaylistLoaderContext)
-            }
-            // Parts rarely start with PAT/PMT, so they are not analyzed.
-            if (record.kind === 'fragment' && record.part === undefined && data instanceof ArrayBuffer) {
-              if (looksLikeTs(new Uint8Array(data, 0, Math.min(data.byteLength, 3 * 188)))) {
-                sink.onTsSegment(record, () => data.slice(0))
+          const deliver = () => {
+            safely(() => {
+              const record = buildRecord(ctx, stats, 'success', response.code)
+              if (record.kind === 'fragment') record.headers = extractHeaders(networkDetails)
+              const data = response.data
+              sink.onRequest(record)
+              if (typeof data === 'string' && record.kind !== 'fragment' && record.kind !== 'key') {
+                sink.onPlaylist(record, data, ctx as PlaylistLoaderContext)
               }
-            }
+              // Parts rarely start with PAT/PMT, so they are not analyzed.
+              if (record.kind === 'fragment' && record.part === undefined && data instanceof ArrayBuffer) {
+                if (looksLikeTs(new Uint8Array(data, 0, Math.min(data.byteLength, 3 * 188)))) {
+                  sink.onTsSegment(record, () => data.slice(0))
+                }
+              }
+            })
+            callbacks.onSuccess(response, stats, ctx, networkDetails)
+          }
+          if (!shaper || !throttled()) return deliver()
+
+          const bytes = stats.loaded
+          const shaped = shaper.shapeSuccess({ ...stats.loading }, bytes, limitsOf(config))
+          const timeoutAt = shaped.timeoutAt
+          if (timeoutAt !== undefined) {
+            this.hold(shaped, timeoutAt, stats, () => {
+              stats.loading.end = timeoutAt
+              safely(() => sink.onRequest(buildRecord(ctx, stats, 'timeout')))
+              callbacks.onTimeout(stats, ctx, networkDetails)
+            })
+            return
+          }
+          this.hold(shaped, shaped.end, stats, () => {
+            stats.loaded = bytes
+            stats.loading.first = shaped.first
+            stats.loading.end = shaped.end
+            if (shaped.end > shaped.first) stats.bwEstimate = (bytes * 8000) / (shaped.end - shaped.first)
+            deliver()
           })
-          callbacks.onSuccess(response, stats, ctx, networkDetails)
         },
         onError: (error, ctx, networkDetails, stats) => {
-          safely(() => {
-            const record = buildRecord(ctx, stats, 'error', error.code)
-            if (record.kind === 'fragment') record.headers = extractHeaders(networkDetails)
-            sink.onRequest(record)
-          })
-          callbacks.onError(error, ctx, networkDetails, stats)
+          const deliver = () => {
+            safely(() => {
+              const record = buildRecord(ctx, stats, 'error', error.code)
+              if (record.kind === 'fragment') record.headers = extractHeaders(networkDetails)
+              sink.onRequest(record)
+            })
+            callbacks.onError(error, ctx, networkDetails, stats)
+          }
+          if (!shaper || !throttled()) return deliver()
+          const at = shaper.shapeError({ start: stats.loading.start, end: stats.loading.end || performance.now() })
+          const delay = at - performance.now()
+          if (delay <= 0) return deliver()
+          // Errors carry no body: there is no progress to simulate, only the latency to wait for.
+          const timer = setTimeout(() => {
+            this.held = undefined
+            deliver()
+          }, delay)
+          this.held = { timer }
         },
         onTimeout: (stats, ctx, networkDetails) => {
           safely(() => sink.onRequest(buildRecord(ctx, stats, 'timeout')))
@@ -253,6 +344,8 @@ export function createMonitoringLoader(Base: LoaderConstructor, sink: LoaderSink
         },
         onAbort: onAbort
           ? (stats, ctx, networkDetails) => {
+              // hls.js loaders still call onAbort after a success; drop a held response.
+              this.cancelPending()
               safely(() => sink.onRequest(buildRecord(ctx, stats, 'abort')))
               onAbort(stats, ctx, networkDetails)
             }

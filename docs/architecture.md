@@ -86,6 +86,29 @@ hls.js only refreshes the active level. On `LEVEL_SWITCHING` the session calls `
 previous level, so that returning to it later does not register as segments missed between
 refreshes.
 
+## Network simulation (`network-shaper.ts`)
+
+A browser page can't throttle its own sockets, so throttling is simulated inside the loader
+wrapper, after the real response arrived at full speed:
+
+- `NetworkShaper` models one downlink shared by all hls.js requests: latency is added before
+  the first byte, and a body only starts flowing once the previous one finished (`busyUntil`),
+  so concurrent audio/video/playlist loads compete for bandwidth.
+- The wrapper holds the response until its simulated end and rewrites `LoaderStats` in place
+  (`loading.first/end`, `bwEstimate`). hls.js reads the same object (`frag.stats =
+  loader.stats`), so its bandwidth estimate and ABR follow the simulated link.
+- While held, `stats.loaded` and `loading.first` advance to the simulated progress every 100 ms.
+  hls.js's ABR abandon rules read them during the load and may abort; `abort()` drops the held
+  response and frees the virtual link.
+- If the simulated transfer exceeds hls.js's `loadPolicy` (`maxTimeToFirstByteMs`,
+  `maxLoadTimeMs`), `onTimeout` is called at the limit instead. That bypasses the XHR loader's
+  internal retry; hls.js's error controller handles the timeout.
+- Errors only get the added latency. `onProgress` callbacks (progressive streaming) are passed
+  through unshaped.
+- The setting lives in React state, not in the URL, so a shared link never throttles the
+  recipient silently. The Player shows a "Throttled" badge while it is on. The alignment probe and
+  the CORS probe are not throttled.
+
 ## Variant alignment probe
 
 hls.js only loads the playlist of the active level, so alignment between variants can't be
