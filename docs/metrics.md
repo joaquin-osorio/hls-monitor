@@ -132,6 +132,29 @@ consecutive samples:
 - Browsers may skip rendering in a hidden tab or when the video is off screen, and some count
   those frames as dropped. Read the numbers with the tab visible.
 
+## Loudness (`src/monitor/audio/loudness.ts`)
+
+ITU-R BS.1770-4 / EBU R128, split in two halves:
+
+- `LoudnessProcessor` (sample level, runs in the AudioWorklet): K-weighting (high-shelf +
+  RLB high-pass biquads, coefficients derived for any sample rate from the analog prototypes
+  as in libebur128; they match the BS.1770 table at 48 kHz), then per 100 ms sub-block
+  `energy = Σ Gᵢ · mean(yᵢ²)` with channel weights 1 (L, R, C), 1.41 (surrounds), 0 (LFE) for
+  5.1 in Web Audio order; any other layout weighs every channel 1.
+- **True peak**: 4× oversampling with the 48-tap interpolation filter of BS.1770-4 Annex 2, on
+  the unfiltered signal; the max of the sample and the 3 interpolated values. Reported in dBTP.
+- `LoudnessAnalyzer` (main thread):
+  - **Momentary** = loudness of the mean energy of the last 4 sub-blocks (400 ms).
+  - **Short-term** = last 30 sub-blocks (3 s).
+  - **Integrated**: every 100 ms completes a 400 ms gating block (75 % overlap). Blocks below
+    −70 LUFS are dropped (absolute gate); the relative threshold is the loudness of the
+    remaining blocks − 10 LU; integrated = loudness of the mean energy of blocks above both.
+    Blocks go into a 0.1 LU histogram holding counts and exact energy sums, so memory is
+    constant for any duration and the only approximation is the relative threshold (≤ 0.1 LU).
+  - `L = −0.691 + 10·log10(energy)`.
+- Verified against EBU Tech 3341-style signals (1 kHz stereo sine at −23 dBFS reads −23 LUFS
+  ±0.1 at 44.1 and 48 kHz; relative gating of quiet passages).
+
 ## Stalls
 
 A stall starts on the `<video>` `waiting` event and ends on the next `playing` (or `seeking`).
