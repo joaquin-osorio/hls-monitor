@@ -1,5 +1,7 @@
 import Hls, { Events, type ErrorData, type LevelSwitchingData, type PlaylistLoaderContext } from 'hls.js'
 import type { VariantSelection } from '@/lib/query-state'
+import { alignmentObservations, buildAlignmentReport, type AlignmentReport, type VariantFetch } from './alignment'
+import { AlignmentProber } from './alignment-prober'
 import {
   checkDetectedCodecs,
   checkMasterPlaylist,
@@ -47,6 +49,8 @@ export class MonitorSession {
   private readonly options: MonitorSessionOptions
   private hls: Hls | null = null
   private analyzer: TsAnalyzer | null = null
+  private prober: AlignmentProber | null = null
+  private alignment: AlignmentReport | null = null
   private sampler: ReturnType<typeof setInterval> | undefined
   private destroyed = false
 
@@ -125,6 +129,8 @@ export class MonitorSession {
     this.video.removeEventListener('playing', this.onPlaying)
     this.video.removeEventListener('seeking', this.onSeeking)
     this.video.removeEventListener('error', this.onMediaError)
+    this.prober?.destroy()
+    this.prober = null
     this.hls?.destroy()
     this.hls = null
     this.analyzer?.destroy()
@@ -257,6 +263,30 @@ export class MonitorSession {
     this.store.markDirty('variants')
     const requested = this.options.variant
     if (requested !== undefined && requested !== 'auto') this.setVariant(requested)
+    const levels = this.hls?.levels ?? []
+    if (this.source.kind === 'master' && levels.length > 1 && !this.prober) {
+      this.prober = new AlignmentProber(
+        levels.map((l, level) => ({ level, uri: l.uri })),
+        this.onAlignmentProbe,
+      )
+    }
+  }
+
+  /** Returns whether to probe again (live streams). */
+  private readonly onAlignmentProbe = (fetches: VariantFetch[], requests: number): boolean => {
+    if (this.destroyed) return false
+    const ptsBySn = new Map<number, Map<number, number>>()
+    for (const r of this.segments.toArray()) {
+      if (r.track !== 'main' || r.ptsStart === undefined) continue
+      let byLevel = ptsBySn.get(r.sn)
+      if (!byLevel) ptsBySn.set(r.sn, (byLevel = new Map()))
+      byLevel.set(r.level, r.ptsStart)
+    }
+    const report = buildAlignmentReport(fetches, ptsBySn, performance.now(), requests)
+    this.alignment = report
+    this.store.markDirty('alignment')
+    this.recordFindings(alignmentObservations(report), report.t)
+    return report.live
   }
 
   private readonly onLevelSwitching = (_event: Events.LEVEL_SWITCHING, data: LevelSwitchingData): void => {
@@ -397,6 +427,7 @@ export class MonitorSession {
       stalls: [],
       errors: [],
       findings: [],
+      alignment: null,
     }
   }
 
@@ -418,6 +449,7 @@ export class MonitorSession {
     if (dirty.has('stalls')) next.stalls = this.stalls.toArray()
     if (dirty.has('errors')) next.errors = this.errors.toArray()
     if (dirty.has('findings')) next.findings = this.findings.list()
+    if (dirty.has('alignment')) next.alignment = this.alignment
     return next
   }
 

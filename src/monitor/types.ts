@@ -1,4 +1,5 @@
 import type { VariantSelection } from '@/lib/query-state'
+import type { AlignmentReport } from './alignment'
 import type { Finding } from './checks'
 import type { CodecFamily } from './codecs'
 import type { MonitorError } from './errors'
@@ -81,6 +82,8 @@ export interface MonitorSnapshot {
   stalls: Stall[]
   errors: MonitorError[]
   findings: Finding[]
+  /** Latest variant alignment probe; null for media-playlist sources or before the first probe. */
+  alignment: AlignmentReport | null
 }
 
 export type SnapshotKey = keyof MonitorSnapshot

@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import { AlignmentPanel } from '@/components/alignment-panel'
 import { BufferPanel } from '@/components/buffer-panel'
 import { ContinuityPanel } from '@/components/continuity-panel'
 import { CorsBanner } from '@/components/cors-banner'
@@ -89,6 +90,7 @@ function App() {
             <LlHlsPanel playlists={snapshot.playlists} parts={snapshot.parts} />
             <div className="grid gap-4 xl:grid-cols-2">
               <ContinuityPanel segments={snapshot.segments} />
+              <AlignmentPanel report={snapshot.alignment} source={snapshot.source} />
             </div>
             <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
               <SpecChecksPanel findings={snapshot.findings} lowLatency={snapshot.playlists.some((r) => r.ll?.partTarget !== undefined) || snapshot.parts.length > 0} />

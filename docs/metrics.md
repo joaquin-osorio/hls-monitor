@@ -76,6 +76,23 @@ cross-segment checks would be noise. Null packets (PID 0x1FFF) are ignored.
 The panel sums packets and errors per (track, level, PID) over the analyzed segments in the
 retention window. The `ts-continuity` spec check counts affected segments per (level, PID).
 
+## Variant alignment (`src/monitor/alignment.ts`)
+
+The reference is the lowest level; an issue lists the levels that differ from it. Segment-level
+comparisons only use SNs listed by every variant, so live playlists fetched a few ms apart still
+compare. Tolerance `ALIGNMENT_TOLERANCE_S` = 0.1 s (about 2–3 frames).
+
+| Issue | Rule |
+| --- | --- |
+| `extinf` | Same SN, EXTINF differs by more than 0.1 s. |
+| `discontinuity` | Same SN, different discontinuity sequence (EXT-X-DISCONTINUITY-SEQUENCE + tags so far): discontinuities are not at the same place. |
+| `pdt` | Same SN, PROGRAM-DATE-TIME differs by more than 0.1 s. |
+| `pts` | Same SN downloaded on several levels by hls.js (ABR switches), start PTS (TS only) differs by more than 0.1 s. |
+| `window` | Live: no SN in common. VOD: different SN range, or total duration differing by more than 1 s. |
+
+Each kind is one `variant-alignment` finding, counted per SN. A variant that can't be fetched
+is an info finding.
+
 ## Playlist health (`src/monitor/playlist/health.ts`)
 
 Each media playlist load produces a `PlaylistRefresh`, tracked per role (`main:<level>`, ...):

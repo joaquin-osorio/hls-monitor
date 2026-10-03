@@ -14,6 +14,7 @@ const CHECKS: { id: CheckId; label: string; ll?: true }[] = [
   { id: 'codecs-undeclared', label: 'Segment codecs match CODECS' },
   { id: 'ts-continuity', label: 'MPEG-TS continuity counters' },
   { id: 'extinf-mismatch', label: 'EXTINF matches media duration' },
+  { id: 'variant-alignment', label: 'Variants aligned' },
   { id: 'll-part-target', label: 'LL-HLS parts within PART-TARGET', ll: true },
   { id: 'll-server-control', label: 'LL-HLS server control and hold-back', ll: true },
   { id: 'll-blocking-reload', label: 'LL-HLS blocking reloads honored', ll: true },

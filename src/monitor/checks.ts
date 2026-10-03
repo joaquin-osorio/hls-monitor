@@ -21,6 +21,7 @@ export type CheckId =
   | 'll-server-control'
   | 'll-blocking-reload'
   | 'll-preload-hint'
+  | 'variant-alignment'
 
 /** One raw result of a check. Observations sharing a `key` collapse into one `Finding`. */
 export interface CheckObservation {

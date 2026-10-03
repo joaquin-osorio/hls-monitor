@@ -35,9 +35,9 @@ setInterval(500ms) ─▶ buffer ahead, live-edge distance, PDT latency samples
 
 ## Invariants
 
-- **No duplicate downloads.** The monitor never issues its own GET for playlists or segments. It
-  observes hls.js through the loader wrapper. The only extra request is the CORS probe (below),
-  which is a body-less `HEAD`.
+- **No duplicate downloads.** The monitor never re-downloads anything hls.js fetched: it observes
+  hls.js through the loader wrapper. Its only own requests are the CORS probe (below, a body-less
+  `HEAD`) and the variant alignment probe (below): media playlists only, **never segments**.
 - **No segment bytes are retained.** For MPEG-TS fragments the loader copies the bytes
   synchronously in `onSuccess`, before calling hls.js back. This is required because hls.js may
   transfer (detach) the original buffer to its transmux worker. The copy is transferred, not
@@ -85,6 +85,16 @@ media playlist given directly as the source is `main:0`.
 hls.js only refreshes the active level. On `LEVEL_SWITCHING` the session calls `forget` on the
 previous level, so that returning to it later does not register as segments missed between
 refreshes.
+
+## Variant alignment probe
+
+hls.js only loads the playlist of the active level, so alignment between variants can't be
+observed passively. On `MANIFEST_PARSED` of a master with more than one level,
+`AlignmentProber` fetches every `hls.levels[i].uri` concurrently with `fetch(…, { cache:
+'no-store' })`: once for VOD, then every 30 s while any variant is live. The requests bypass
+hls.js, so they are not throttled and not shown in the network table; the panel shows how many
+were made. They are aborted on `destroy()`. `compareVariants` (`alignment.ts`) then compares the
+playlists (see `docs/metrics.md`). Alternate renditions (EXT-X-MEDIA) are not probed.
 
 ## Error classification
 

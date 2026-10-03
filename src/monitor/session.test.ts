@@ -242,6 +242,28 @@ describe('MonitorSession', () => {
     expect(snap.segments).toEqual([expect.objectContaining({ sn: 12, attempts: 0, partsLoaded: 1 })])
   })
 
+  it('probes every variant playlist of a master and reports their alignment', async () => {
+    const fetchMock = vi.fn(async (uri: string) =>
+      new Response(`#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:${uri.includes('v1') ? 3 : 4},\na.ts\n#EXT-X-ENDLIST\n`),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    session = new MonitorSession(MASTER_URL, video)
+    mocks.responses.set(MASTER_URL, '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nv0/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=2\nv1/index.m3u8\n')
+    load(MASTER_URL, { type: 'manifest' })
+    const hls = mocks.FakeHls.instance
+    hls.levels = [
+      { uri: LEVEL_URL, width: 0, height: 0, attrs: {} },
+      { uri: 'https://cdn.test/v1/index.m3u8', width: 0, height: 0, attrs: {} },
+    ]
+    hls.emit('hlsManifestParsed')
+
+    await vi.waitFor(() => expect(snapshot().alignment).not.toBeNull())
+    const snap = snapshot()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(snap.alignment).toMatchObject({ live: false, requests: 2, comparedSns: 1 })
+    expect(snap.findings).toContainEqual(expect.objectContaining({ key: 'variant-alignment|extinf' }))
+  })
+
   it('samples frame counters and the playing level', () => {
     session = new MonitorSession(MASTER_URL, video)
     mocks.FakeHls.instance.currentLevel = 2
