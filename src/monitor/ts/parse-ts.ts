@@ -1,8 +1,13 @@
 import type { CodecFamily } from '../codecs'
+import { probeEs } from './es-probe'
 
 const PACKET_SIZE = 188
 const SYNC_BYTE = 0x47
 const PTS_CLOCK = 90_000
+/** The PTS counter wraps every 2^33 ticks (~26.5 h). */
+const PTS_WRAP_S = 2 ** 33 / PTS_CLOCK
+/** Bytes of the first PES payload kept per PID for codec probing (SPS / ADTS header). */
+const ES_PROBE_BYTES = 4096
 
 export interface TsStream {
   pid: number
@@ -10,9 +15,24 @@ export interface TsStream {
   streamType: number
   /** Undefined for streams that are not audio/video (ID3 metadata, unknown private data). */
   family?: CodecFamily
-  /** First and last PES PTS in seconds, in packet order. */
-  firstPts?: number
-  lastPts?: number
+  /**
+   * Lowest and highest PES PTS in seconds. Min/max rather than first/last because video PES
+   * arrive in decode order (B-frames). Unwrapped relative to the first PTS of the segment, so
+   * values can exceed the 33-bit range.
+   */
+  minPts?: number
+  maxPts?: number
+  /** PES packets with a PTS. */
+  pesCount?: number
+  /**
+   * Estimated media duration: `(max − min) · n / (n − 1)`, i.e. the PTS span plus one average
+   * PES duration. Exact for video (one access unit per PES); approximate for audio.
+   */
+  duration?: number
+  /** RFC 6381 codec string read from the stream (SPS for AVC, ADTS for AAC). */
+  codec?: string
+  sampleRate?: number
+  channels?: number
 }
 
 /** Packet and continuity statistics for one PID (every PID seen except null packets). */
@@ -134,10 +154,33 @@ function readPts(data: Uint8Array, o: number, end: number): number | undefined {
   return pts / PTS_CLOCK
 }
 
+interface EsProbe {
+  chunks: Uint8Array[]
+  size: number
+  done: boolean
+}
+
+function collect(probe: EsProbe, bytes: Uint8Array): void {
+  const take = bytes.subarray(0, ES_PROBE_BYTES - probe.size)
+  probe.chunks.push(take)
+  probe.size += take.length
+  if (probe.size >= ES_PROBE_BYTES) probe.done = true
+}
+
+function concat(chunks: Uint8Array[], size: number): Uint8Array {
+  const out = new Uint8Array(size)
+  let o = 0
+  for (const c of chunks) {
+    out.set(c, o)
+    o += c.length
+  }
+  return out
+}
+
 /**
- * Parses an MPEG-TS segment: program tables, elementary streams with codec family, PTS range and
- * continuity errors. Assumes PAT and PMT sections each fit in a single packet, which holds for
- * practically every HLS packager.
+ * Parses an MPEG-TS segment: program tables, elementary streams with codec family and codec
+ * string, PTS range and estimated duration, and per-PID continuity errors. Assumes PAT and PMT
+ * sections each fit in a single packet, which holds for practically every HLS packager.
  *
  * @throws TsParseError when the data has no usable PAT/PMT.
  */
@@ -149,7 +192,9 @@ export function parseTs(data: Uint8Array): TsAnalysis {
   let packets = 0
   const lastCc = new Map<number, number>()
   const pidStats = new Map<number, TsPidStats>()
-  const ptsByPid = new Map<number, { first: number; last: number }>()
+  const ptsByPid = new Map<number, { ref: number; min: number; max: number; count: number }>()
+  // First PES payload per PID, collected until the next PES starts or ES_PROBE_BYTES is reached.
+  const probes = new Map<number, EsProbe>()
 
   for (let p = 0; p + PACKET_SIZE <= data.length; p += PACKET_SIZE) {
     packets++
@@ -177,18 +222,38 @@ export function parseTs(data: Uint8Array): TsAnalysis {
       }
       lastCc.set(pid, cc)
     }
-    if (payload === -1 || payload >= end || !pusi) continue
+    if (payload === -1 || payload >= end) continue
+    if (!pusi) {
+      const probe = probes.get(pid)
+      if (probe && !probe.done) collect(probe, data.subarray(payload, end))
+      continue
+    }
 
     if (pid === 0) {
       pmtPid ??= parsePat(data, sectionStart(data, payload), end)
     } else if (pid === pmtPid) {
       streams ??= parsePmt(data, sectionStart(data, payload), end)
     } else {
-      const pts = readPts(data, payload, end)
+      const probe = probes.get(pid)
+      if (probe) probe.done = true
+      else if (data[payload] === 0 && data[payload + 1] === 0 && data[payload + 2] === 1 && payload + 9 < end) {
+        const esStart = payload + 9 + data[payload + 8]
+        const started: EsProbe = { chunks: [], size: 0, done: false }
+        probes.set(pid, started)
+        if (esStart < end) collect(started, data.subarray(esStart, end))
+      }
+      let pts = readPts(data, payload, end)
       if (pts === undefined) continue
       const range = ptsByPid.get(pid)
-      if (range) range.last = pts
-      else ptsByPid.set(pid, { first: pts, last: pts })
+      if (!range) {
+        ptsByPid.set(pid, { ref: pts, min: pts, max: pts, count: 1 })
+        continue
+      }
+      if (pts - range.ref > PTS_WRAP_S / 2) pts -= PTS_WRAP_S
+      else if (range.ref - pts > PTS_WRAP_S / 2) pts += PTS_WRAP_S
+      range.min = Math.min(range.min, pts)
+      range.max = Math.max(range.max, pts)
+      range.count++
     }
   }
 
@@ -197,8 +262,14 @@ export function parseTs(data: Uint8Array): TsAnalysis {
 
   for (const s of streams) {
     const range = ptsByPid.get(s.pid)
-    s.firstPts = range?.first
-    s.lastPts = range?.last
+    if (range) {
+      s.minPts = range.min
+      s.maxPts = range.max
+      s.pesCount = range.count
+      if (range.count > 1) s.duration = ((range.max - range.min) * range.count) / (range.count - 1)
+    }
+    const probe = probes.get(s.pid)
+    if (probe) Object.assign(s, probeEs(s.family, concat(probe.chunks, probe.size)))
   }
   const families = [...new Set(streams.flatMap((s) => (s.family ? [s.family] : [])))]
   const pids = [...pidStats.values()].sort((a, b) => a.pid - b.pid)

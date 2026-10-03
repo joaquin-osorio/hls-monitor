@@ -4,6 +4,7 @@ import {
   checkDetectedCodecs,
   checkMasterPlaylist,
   checkMediaPlaylist,
+  checkSegmentDuration,
   checkTsContinuity,
   FindingsLog,
   type CheckObservation,
@@ -151,7 +152,14 @@ export class MonitorSession {
           if (this.destroyed) return
           this.segments.attachAnalysis(key, analysis)
           if (track === 'main') this.recordDetectedCodecs(level, analysis.families)
-          this.recordFindings(checkTsContinuity(track, level, sn, record.url, analysis), performance.now())
+          const measured = this.segments.get(key)?.measuredDuration
+          this.recordFindings(
+            [
+              ...checkTsContinuity(track, level, sn, record.url, analysis),
+              ...checkSegmentDuration(track, level, sn, record.url, record.duration ?? 0, measured),
+            ],
+            performance.now(),
+          )
           this.store.markDirty('segments')
         },
         (err: Error) => {

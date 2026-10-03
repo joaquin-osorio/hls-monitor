@@ -44,6 +44,27 @@ types do not carry profile or level. With demuxed audio (`EXT-X-MEDIA`), video s
 contain video, so the detected set can be a subset of CODECS; only families missing *from*
 CODECS are flagged. fMP4 and AES-128 encrypted segments are not analyzed.
 
+## Measured segment duration and codec strings (MPEG-TS worker)
+
+- **PTS range** is the min/max PES PTS of the reference stream (video if present, else the first
+  stream with PTS). Min/max, not first/last, because video PES arrive in decode order. PTS are
+  unwrapped against the first PTS of the segment, so a 33-bit rollover inside a segment does not
+  break the span.
+- **Measured duration** = `(max − min) · n / (n − 1)`, with `n` PES packets: the PTS span plus
+  one average PES duration. For video (one access unit per PES) that is exact for constant frame
+  rate. For audio it assumes PES of equal duration, which is true for common packagers except
+  for a shorter last PES.
+- `extinf-mismatch` warns when `|measured − EXTINF| > EXTINF_TOLERANCE_S` (0.1 s, in
+  `checks.ts`): about 2–3 video frames, well above the rounding of a 3-decimal EXTINF.
+  Playlists with integer EXTINF (EXT-X-VERSION < 3) will usually warn, which is intended: the
+  spec asks for accurate durations.
+- **Codec strings** come from the start of the first PES of each stream (up to 4 KB, across
+  packets): `avc1.PPCCLL` from the first SPS; `mp4a.40.<aot>`, sample rate and channel
+  configuration from the first ADTS header (ADTS carries the base object type, so HE-AAC with
+  implicit SBR reads as `mp4a.40.2` while CODECS may say `mp4a.40.5`); `ac-3` (with sample
+  rate), `ec-3`, `mp4a.40.34` for the rest. HEVC strings are not derived: Apple requires fMP4
+  for HEVC and fMP4 is not parsed.
+
 ## TS continuity (`src/monitor/continuity.ts`)
 
 The TS worker counts, per PID, packets and continuity-counter jumps: a CC that is neither the

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkDetectedCodecs, checkMasterPlaylist, checkMediaPlaylist, checkTsContinuity, FindingsLog } from './checks'
+import { checkDetectedCodecs, checkMasterPlaylist, checkMediaPlaylist, checkSegmentDuration, checkTsContinuity, FindingsLog } from './checks'
 import { familyOfCodecString } from './codecs'
 import { PlaylistHealthTracker } from './playlist/health'
 import { type MediaPlaylist, parsePlaylist } from './playlist/parse'
@@ -135,6 +135,16 @@ describe('checkTsContinuity', () => {
         occurrence: 42,
         url: 'https://cdn/s42.ts',
       },
+    ])
+  })
+})
+
+describe('checkSegmentDuration', () => {
+  it('warns only when the measured duration is off by more than 100 ms', () => {
+    expect(checkSegmentDuration('main', 0, 7, 'u', 6.006, 6.0)).toEqual([])
+    expect(checkSegmentDuration('main', 0, 7, 'u', 6, undefined)).toEqual([])
+    expect(checkSegmentDuration('main', 0, 7, 'u', 6, 5.5)).toEqual([
+      expect.objectContaining({ checkId: 'extinf-mismatch', key: 'extinf-mismatch|main:0', severity: 'warn', occurrence: 7 }),
     ])
   })
 })

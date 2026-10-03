@@ -40,6 +40,8 @@ export interface SegmentRecord {
   codecs?: CodecFamily[]
   ptsStart?: number
   ptsEnd?: number
+  /** Media duration measured from PTS (video stream, else audio), in seconds. */
+  measuredDuration?: number
   ccErrors?: number
   /** Per-PID packet counts and continuity errors inside this segment. */
   pids?: TsPidStats[]
@@ -130,18 +132,23 @@ export class SegmentLog {
       (r) => {
         if ('error' in result) return { ...r, tsError: result.error }
         const video = result.streams.find((s) => s.family === 'avc' || s.family === 'hevc')
-        const reference = video ?? result.streams.find((s) => s.firstPts !== undefined)
+        const reference = video ?? result.streams.find((s) => s.minPts !== undefined)
         return {
           ...r,
           codecs: result.families,
-          ptsStart: reference?.firstPts,
-          ptsEnd: reference?.lastPts,
+          ptsStart: reference?.minPts,
+          ptsEnd: reference?.maxPts,
+          measuredDuration: reference?.duration,
           ccErrors: result.ccErrors,
           pids: result.pids,
           streams: result.streams,
         }
       },
     )
+  }
+
+  get(key: string): SegmentRecord | undefined {
+    return this.buf.findLast((r) => r.key === key)
   }
 
   toArray(): SegmentRecord[] {

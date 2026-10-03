@@ -12,6 +12,7 @@ const CHECKS: { id: CheckId; label: string }[] = [
   { id: 'codecs-missing', label: 'CODECS declared on every variant' },
   { id: 'codecs-undeclared', label: 'Segment codecs match CODECS' },
   { id: 'ts-continuity', label: 'MPEG-TS continuity counters' },
+  { id: 'extinf-mismatch', label: 'EXTINF matches media duration' },
 ]
 
 const SEVERITY_ORDER: Record<Severity, number> = { error: 0, warn: 1, info: 2 }

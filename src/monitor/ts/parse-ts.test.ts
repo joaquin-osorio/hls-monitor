@@ -42,8 +42,13 @@ function encodePts(seconds: number): number[] {
   return [0x21 | (hi << 1), mid >> 7, ((mid & 0x7f) << 1) | 1, lo >> 7, ((lo & 0x7f) << 1) | 1]
 }
 
-function pes(pid: number, cc: number, seconds: number): number[] {
-  return packet(pid, cc, [0x00, 0x00, 0x01, 0xe0, 0x00, 0x00, 0x80, 0x80, 0x05, ...encodePts(seconds)])
+function pes(pid: number, cc: number, seconds: number, es: number[] = []): number[] {
+  return packet(pid, cc, [0x00, 0x00, 0x01, 0xe0, 0x00, 0x00, 0x80, 0x80, 0x05, ...encodePts(seconds), ...es])
+}
+
+/** Continuation packet (no payload_unit_start) carrying raw ES bytes. */
+function continuation(pid: number, cc: number, es: number[]): number[] {
+  return packet(pid, cc, es, false)
 }
 
 const AVC_AAC = pmt([
@@ -72,14 +77,51 @@ describe('parseTs', () => {
     expect(result.ccErrors).toBe(0)
     const video = result.streams.find((s) => s.pid === VIDEO_PID)!
     expect(video.streamType).toBe(0x1b)
-    expect(video.firstPts).toBeCloseTo(10)
-    expect(video.lastPts).toBeCloseTo(13.96)
+    expect(video.minPts).toBeCloseTo(10)
+    expect(video.maxPts).toBeCloseTo(13.96)
+    expect(video.pesCount).toBe(3)
+  })
+
+  it('uses min/max PTS with B-frames and adds one frame to the span for the duration', () => {
+    const f = 1 / 25
+    // Decode order I P B B: PTS 0, 3f, f, 2f
+    const data = segment(pat(), AVC_AAC, pes(VIDEO_PID, 0, 10), pes(VIDEO_PID, 1, 10 + 3 * f), pes(VIDEO_PID, 2, 10 + f), pes(VIDEO_PID, 3, 10 + 2 * f))
+    const video = parseTs(data).streams.find((s) => s.pid === VIDEO_PID)!
+    expect(video.minPts).toBeCloseTo(10)
+    expect(video.maxPts).toBeCloseTo(10 + 3 * f)
+    expect(video.duration).toBeCloseTo(4 * f)
+  })
+
+  it('unwraps PTS that roll over the 33-bit counter inside a segment', () => {
+    const wrap = 2 ** 33 / 90_000
+    const data = segment(pat(), AVC_AAC, pes(VIDEO_PID, 0, wrap - 1), pes(VIDEO_PID, 1, 1))
+    const video = parseTs(data).streams.find((s) => s.pid === VIDEO_PID)!
+    expect(video.maxPts! - video.minPts!).toBeCloseTo(2, 3)
+  })
+
+  it('reads the AVC codec string from the SPS, even when it spans two packets', () => {
+    const sps = [0x00, 0x00, 0x00, 0x01, 0x67, 0x64, 0x00, 0x1f, 0xac]
+    // AUD in the first packet, stuffing up to the end, SPS in the continuation packet.
+    const first = pes(VIDEO_PID, 0, 1, [0x00, 0x00, 0x00, 0x01, 0x09, 0xf0])
+    const data = segment(pat(), AVC_AAC, first, continuation(VIDEO_PID, 1, sps), pes(VIDEO_PID, 2, 1.04))
+    expect(parseTs(data).streams.find((s) => s.pid === VIDEO_PID)?.codec).toBe('avc1.64001f')
+  })
+
+  it('reads AAC object type, sample rate and channels from the ADTS header', () => {
+    // ADTS: AAC LC (profile 1), 48 kHz (index 3), 2 channels
+    const adts = [0xff, 0xf1, (1 << 6) | (3 << 2) | 0, 2 << 6, 0x00, 0x1f, 0xfc]
+    const data = segment(pat(), AVC_AAC, pes(AUDIO_PID, 0, 1, adts))
+    expect(parseTs(data).streams.find((s) => s.pid === AUDIO_PID)).toMatchObject({
+      codec: 'mp4a.40.2',
+      sampleRate: 48000,
+      channels: 2,
+    })
   })
 
   it('reads PTS values above 32 bits', () => {
     const big = 2 ** 32 / 90_000 + 5 // ~47 727 s
     const result = parseTs(segment(pat(), AVC_AAC, pes(VIDEO_PID, 0, big)))
-    expect(result.streams[0].firstPts).toBeCloseTo(big, 3)
+    expect(result.streams[0].minPts).toBeCloseTo(big, 3)
   })
 
   it('detects AC-3 signalled through a DVB descriptor on private data', () => {

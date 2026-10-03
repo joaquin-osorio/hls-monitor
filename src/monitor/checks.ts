@@ -6,6 +6,9 @@ import { formatPid, pidLabel } from './ts/stream-types'
 
 export type Severity = 'error' | 'warn' | 'info'
 
+/** Max allowed difference between EXTINF and the duration measured from PTS, in seconds. */
+export const EXTINF_TOLERANCE_S = 0.1
+
 export type CheckId =
   | 'target-exceeded'
   | 'discontinuity'
@@ -13,6 +16,7 @@ export type CheckId =
   | 'codecs-missing'
   | 'codecs-undeclared'
   | 'ts-continuity'
+  | 'extinf-mismatch'
 
 /** One raw result of a check. Observations sharing a `key` collapse into one `Finding`. */
 export interface CheckObservation {
@@ -137,6 +141,28 @@ export function checkTsContinuity(
         url,
       }
     })
+}
+
+/** Flags a segment whose PTS-measured duration differs from its EXTINF by more than the tolerance. */
+export function checkSegmentDuration(
+  track: string,
+  level: number,
+  sn: number,
+  url: string,
+  extinf: number,
+  measured: number | undefined,
+): CheckObservation[] {
+  if (measured === undefined || extinf <= 0 || Math.abs(measured - extinf) <= EXTINF_TOLERANCE_S) return []
+  return [
+    {
+      checkId: 'extinf-mismatch',
+      key: `extinf-mismatch|${track}:${level}`,
+      severity: 'warn',
+      message: `${track} ${level} · segment ${sn}: EXTINF ${extinf}s but media lasts ${measured.toFixed(3)}s`,
+      occurrence: sn,
+      url,
+    },
+  ]
 }
 
 /** Deduplicated, counted findings. Finding objects are replaced, never mutated. */
