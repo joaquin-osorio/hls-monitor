@@ -28,6 +28,8 @@ export interface SegmentRecord {
   /** Network attempts, including retries. Aborts (e.g. on level switch) are not counted. */
   attempts: number
   httpStatus?: number
+  /** Response headers of the latest attempt (only those CORS exposes). */
+  headers?: [string, string][]
   /** Metrics of the latest attempt. */
   ttfbMs?: number
   totalMs?: number
@@ -93,6 +95,7 @@ export class SegmentLog {
       status: statusOf(req, metrics.ratio),
       gapReason: undefined,
       httpStatus: req.status,
+      headers: req.headers,
       bytes: req.outcome === 'success' ? req.bytes : undefined,
       ...metrics,
     }

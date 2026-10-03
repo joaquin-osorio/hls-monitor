@@ -7,7 +7,7 @@ import type {
   LoaderStats,
 } from 'hls.js'
 import { describe, expect, it, vi } from 'vitest'
-import { createMonitoringLoader, type LoaderSink } from './loader'
+import { createMonitoringLoader, extractHeaders, type LoaderSink } from './loader'
 
 function stats(start: number, first: number, end: number, loaded: number): LoaderStats {
   return {
@@ -128,6 +128,17 @@ describe('createMonitoringLoader', () => {
     expect(hlsCallbacks.onTimeout).toHaveBeenCalledOnce()
   })
 
+  it('records the response headers of fragments', () => {
+    const { sink, loader, hlsCallbacks } = setup()
+    loader.load(fragContext(), {} as LoaderConfiguration, hlsCallbacks)
+    const xhr = { getAllResponseHeaders: () => 'Content-Type: video/mp2t\r\nCache-Control: max-age=60\r\n' } as unknown as XMLHttpRequest
+    FakeLoader.last.callbacks.onSuccess({ url: '', data: tsBytes(), code: 200 }, stats(0, 1, 2, 3), FakeLoader.last.context!, xhr)
+    expect(sink.onRequest.mock.calls[0][0].headers).toEqual([
+      ['content-type', 'video/mp2t'],
+      ['cache-control', 'max-age=60'],
+    ])
+  })
+
   it('keeps playback going when the sink throws', () => {
     const { sink, loader, hlsCallbacks } = setup()
     sink.onRequest.mockImplementation(() => {
@@ -138,5 +149,17 @@ describe('createMonitoringLoader', () => {
     FakeLoader.last.callbacks.onSuccess({ url: '', data: tsBytes(), code: 200 }, stats(0, 1, 2, 3), FakeLoader.last.context!, null)
     expect(hlsCallbacks.onSuccess).toHaveBeenCalledOnce()
     consoleError.mockRestore()
+  })
+})
+
+describe('extractHeaders', () => {
+  it('reads headers from an XHR, a fetch Response, or nothing', () => {
+    expect(extractHeaders({ getAllResponseHeaders: () => 'Age: 12\r\nX-Cache: HIT' })).toEqual([
+      ['age', '12'],
+      ['x-cache', 'HIT'],
+    ])
+    expect(extractHeaders({ headers: new Headers({ 'Content-Length': '10' }) })).toEqual([['content-length', '10']])
+    expect(extractHeaders(null)).toBeUndefined()
+    expect(extractHeaders({ getAllResponseHeaders: () => '' })).toBeUndefined()
   })
 })

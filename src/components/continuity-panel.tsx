@@ -43,7 +43,7 @@ export const ContinuityPanel = memo(function ContinuityPanel({ segments }: { seg
                   <TableRow key={r.key}>
                     <TableCell>{r.track === 'main' ? `level ${r.level}` : `${r.track} ${r.level}`}</TableCell>
                     <TableCell className="font-mono">{formatPid(r.pid)}</TableCell>
-                    <TableCell>{pidLabel(r.pid, r.streamType)}</TableCell>
+                    <TableCell>{pidLabel(r.pid, r.streamType, r.kind)}</TableCell>
                     <TableCell className="text-right">{r.packets}</TableCell>
                     <TableCell className={cn('text-right', r.ccErrors > 0 && 'text-status-error')}>{r.ccErrors}</TableCell>
                     <TableCell className="text-right" title="Affected / analyzed">

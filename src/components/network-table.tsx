@@ -16,7 +16,13 @@ const STATUS_TEXT: Record<SegmentRecord['status'], string> = {
 }
 
 /** Per-segment network metrics, newest first. Gaps have no request and are left out. */
-export const NetworkTable = memo(function NetworkTable({ segments }: { segments: SegmentRecord[] }) {
+interface NetworkTableProps {
+  segments: SegmentRecord[]
+  /** Opens the segment inspector. */
+  onInspect: (key: string) => void
+}
+
+export const NetworkTable = memo(function NetworkTable({ segments, onInspect }: NetworkTableProps) {
   const rows = segments.filter((r) => r.status !== 'gap').slice(-MAX_ROWS).reverse()
   return (
     <Card size="sm">
@@ -52,7 +58,16 @@ export const NetworkTable = memo(function NetworkTable({ segments }: { segments:
                 {rows.map((r) => (
                   <TableRow key={r.key}>
                     <TableCell className="font-mono">{formatClock(r.t)}</TableCell>
-                    <TableCell>{r.sn}</TableCell>
+                    <TableCell>
+                      <button
+                        type="button"
+                        className="underline decoration-dotted underline-offset-2"
+                        onClick={() => onInspect(r.key)}
+                        title="Inspect segment"
+                      >
+                        {r.sn}
+                      </button>
+                    </TableCell>
                     <TableCell>
                       {r.track === 'main' ? r.level : `${r.track} ${r.level}`}
                     </TableCell>

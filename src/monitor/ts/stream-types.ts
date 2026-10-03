@@ -27,9 +27,10 @@ export function formatPid(pid: number): string {
   return `0x${pid.toString(16).padStart(4, '0')}`
 }
 
-/** Role of a PID inside one segment: program tables, an elementary stream, or something else. */
-export function pidLabel(pid: number, streamType: number | undefined): string {
-  if (pid === 0) return 'PAT'
-  if (streamType === undefined) return pid === 0x11 ? 'SDT' : 'PMT / other'
-  return streamTypeName(streamType)
+/** Label for a PID: its program table, its stream type, or a well-known DVB table. */
+export function pidLabel(pid: number, streamType: number | undefined, kind?: 'pat' | 'pmt' | 'es'): string {
+  if (pid === 0 || kind === 'pat') return 'PAT'
+  if (kind === 'pmt') return 'PMT'
+  if (streamType !== undefined) return streamTypeName(streamType)
+  return pid === 0x11 ? 'SDT' : 'other'
 }

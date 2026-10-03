@@ -38,6 +38,8 @@ export interface TsStream {
 /** Packet and continuity statistics for one PID (every PID seen except null packets). */
 export interface TsPidStats {
   pid: number
+  /** Program table or elementary stream from the PMT; absent for anything else (SDT, ...). */
+  kind?: 'pat' | 'pmt' | 'es'
   packets: number
   /** Continuity counter jumps on this PID, excluding duplicates and signalled discontinuities. */
   ccErrors: number
@@ -272,6 +274,12 @@ export function parseTs(data: Uint8Array): TsAnalysis {
     if (probe) Object.assign(s, probeEs(s.family, concat(probe.chunks, probe.size)))
   }
   const families = [...new Set(streams.flatMap((s) => (s.family ? [s.family] : [])))]
+  const esPids = new Set(streams.map((s) => s.pid))
+  for (const stats of pidStats.values()) {
+    if (stats.pid === 0) stats.kind = 'pat'
+    else if (stats.pid === pmtPid) stats.kind = 'pmt'
+    else if (esPids.has(stats.pid)) stats.kind = 'es'
+  }
   const pids = [...pidStats.values()].sort((a, b) => a.pid - b.pid)
   return { packets, syncErrors, ccErrors, pids, streams, families }
 }

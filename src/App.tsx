@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { BufferPanel } from '@/components/buffer-panel'
 import { ContinuityPanel } from '@/components/continuity-panel'
 import { CorsBanner } from '@/components/cors-banner'
@@ -8,6 +8,7 @@ import { LatencyPanel } from '@/components/latency-panel'
 import { NetworkTable } from '@/components/network-table'
 import { PlayerPanel } from '@/components/player-panel'
 import { PlaylistHealthPanel } from '@/components/playlist-health-panel'
+import { SegmentInspector } from '@/components/segment-inspector'
 import { SegmentTimeline } from '@/components/segment-timeline'
 import { SpecChecksPanel } from '@/components/spec-checks-panel'
 import { UrlForm } from '@/components/url-form'
@@ -28,6 +29,10 @@ function App() {
   const [query, setQuery] = useQueryState()
   const [video, setVideo] = useState<HTMLVideoElement | null>(null)
   const { snapshot } = useMonitor(query.url, video, query.variant, () => setQuery({ variant: 'auto' }))
+  // Scoped to the URL it was opened for, so a new stream closes the inspector.
+  const [inspect, setInspect] = useState<{ url: string | null; key: string } | null>(null)
+  const inspectedKey = inspect && inspect.url === query.url ? inspect.key : null
+  const openInspector = useCallback((key: string) => setInspect({ url: query.url, key }), [query.url])
 
   const load = (url: string) => setQuery({ url, variant: 'auto' }, 'push')
 
@@ -75,9 +80,9 @@ function App() {
               requested={query.variant}
               onSelect={(variant) => setQuery({ variant })}
             />
-            <SegmentTimeline segments={snapshot.segments} />
+            <SegmentTimeline segments={snapshot.segments} onInspect={openInspector} />
             <div className="grid gap-4 xl:grid-cols-2">
-              <NetworkTable segments={snapshot.segments} />
+              <NetworkTable segments={snapshot.segments} onInspect={openInspector} />
               <PlaylistHealthPanel playlists={snapshot.playlists} />
             </div>
             <div className="grid gap-4 xl:grid-cols-2">
@@ -87,6 +92,12 @@ function App() {
               <SpecChecksPanel findings={snapshot.findings} />
               <ErrorLog errors={snapshot.errors} />
             </div>
+            <SegmentInspector
+              segmentKey={inspectedKey}
+              record={inspectedKey ? snapshot.segments.findLast((r) => r.key === inspectedKey) : undefined}
+              variants={snapshot.variants}
+              onClose={() => setInspect(null)}
+            />
           </>
         )}
       </div>

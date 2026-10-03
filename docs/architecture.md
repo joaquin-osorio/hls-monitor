@@ -58,6 +58,17 @@ setInterval(500ms) ─▶ buffer ahead, live-edge distance, PDT latency samples
   - Only the PROGRAM-DATE-TIME latency uses `Date.now()`, because PDT is wall-clock. That number
     is only as accurate as the client clock.
 
+## Segment inspector
+
+The inspector (`segment-inspector.tsx`) reads one `SegmentRecord` live from the snapshot by key,
+so it keeps updating while open (a retry or a late TS analysis shows up) and says so when the
+record leaves the retention window. Its selection is scoped to the URL it was opened for.
+
+Response headers are captured by the loader from `networkDetails` (the XHR for hls.js's default
+loader, the `Response` for its fetch loader), for fragments only, latest attempt only. Browsers
+only expose CORS-safelisted headers on cross-origin responses, plus what the server lists in
+`Access-Control-Expose-Headers`, so CDN headers such as `Age` or `X-Cache` are usually missing.
+
 ## Why a custom playlist parser
 
 hls.js parses playlists too, but it normalizes and tolerates spec violations: it accepts EXTINF

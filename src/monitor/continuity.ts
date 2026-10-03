@@ -6,6 +6,7 @@ export interface PidContinuity {
   track: string
   level: number
   pid: number
+  kind?: 'pat' | 'pmt' | 'es'
   /** stream_type from the PMT; undefined for PAT/PMT and other non-ES PIDs. */
   streamType?: number
   packets: number
@@ -30,7 +31,7 @@ export function continuityByPid(records: readonly SegmentRecord[]): PidContinuit
       const key = `${r.track}:${r.level}:${p.pid}`
       let row = rows.get(key)
       if (!row) {
-        row = { key, track: r.track, level: r.level, pid: p.pid, packets: 0, ccErrors: 0, segments: 0, affectedSegments: 0 }
+        row = { key, track: r.track, level: r.level, pid: p.pid, kind: p.kind, packets: 0, ccErrors: 0, segments: 0, affectedSegments: 0 }
         rows.set(key, row)
       }
       row.streamType ??= r.streams?.find((s) => s.pid === p.pid)?.streamType

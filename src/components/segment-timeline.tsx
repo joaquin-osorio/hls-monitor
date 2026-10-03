@@ -30,21 +30,35 @@ function describe(r: SegmentRecord): string {
   return lines.join('\n')
 }
 
-function TrackRow({ track, records }: { track: string; records: SegmentRecord[] }) {
+function TrackRow({ track, records, onInspect }: { track: string; records: SegmentRecord[]; onInspect: (key: string) => void }) {
   const sorted = [...records].sort((a, b) => a.sn - b.sn || a.t - b.t)
   return (
     <div className="flex flex-col gap-1">
       <span className="text-muted-foreground text-xs">{track}</span>
       <div className="flex flex-wrap gap-0.5" role="list" aria-label={`${track} segments`}>
         {sorted.map((r) => (
-          <div key={r.key} role="listitem" title={describe(r)} className={cn('h-4 w-2 rounded-[2px]', STATUS_CLASS[r.status])} />
+          <button
+            key={r.key}
+            type="button"
+            role="listitem"
+            title={describe(r)}
+            aria-label={`Inspect segment ${r.sn}`}
+            onClick={() => onInspect(r.key)}
+            className={cn('h-4 w-2 rounded-[2px] hover:ring-2 hover:ring-foreground/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none', STATUS_CLASS[r.status])}
+          />
         ))}
       </div>
     </div>
   )
 }
 
-export const SegmentTimeline = memo(function SegmentTimeline({ segments }: { segments: SegmentRecord[] }) {
+interface SegmentTimelineProps {
+  segments: SegmentRecord[]
+  /** Opens the segment inspector. */
+  onInspect: (key: string) => void
+}
+
+export const SegmentTimeline = memo(function SegmentTimeline({ segments, onInspect }: SegmentTimelineProps) {
   const counts: Record<SegmentStatus, number> = { ok: 0, slow: 0, error: 0, gap: 0 }
   const byTrack = new Map<string, SegmentRecord[]>()
   for (const r of segments) {
@@ -73,7 +87,7 @@ export const SegmentTimeline = memo(function SegmentTimeline({ segments }: { seg
         {segments.length === 0 ? (
           <p className="text-muted-foreground">No segments yet.</p>
         ) : (
-          [...byTrack].map(([track, records]) => <TrackRow key={track} track={track} records={records} />)
+          [...byTrack].map(([track, records]) => <TrackRow key={track} track={track} records={records} onInspect={onInspect} />)
         )}
       </CardContent>
     </Card>

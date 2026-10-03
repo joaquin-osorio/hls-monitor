@@ -153,10 +153,10 @@ describe('parseTs', () => {
       pes(AUDIO_PID, 5, 2), // jump on audio only
     )
     expect(parseTs(data).pids).toEqual([
-      { pid: 0, packets: 1, ccErrors: 0 },
-      { pid: VIDEO_PID, packets: 2, ccErrors: 0 },
-      { pid: AUDIO_PID, packets: 2, ccErrors: 1 },
-      { pid: PMT_PID, packets: 1, ccErrors: 0 },
+      { pid: 0, kind: 'pat', packets: 1, ccErrors: 0 },
+      { pid: VIDEO_PID, kind: 'es', packets: 2, ccErrors: 0 },
+      { pid: AUDIO_PID, kind: 'es', packets: 2, ccErrors: 1 },
+      { pid: PMT_PID, kind: 'pmt', packets: 1, ccErrors: 0 },
     ])
   })
 

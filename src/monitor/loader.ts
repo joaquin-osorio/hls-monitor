@@ -34,6 +34,11 @@ export interface RequestRecord {
   track?: string
   /** EXTINF duration in seconds. Fragment only. */
   duration?: number
+  /**
+   * Response headers visible to page JS, lower-cased names. Fragment only. CORS limits them to
+   * the safelisted ones plus whatever `Access-Control-Expose-Headers` lists.
+   */
+  headers?: [string, string][]
 }
 
 export interface LoaderSink {
@@ -83,6 +88,30 @@ function buildRecord(context: LoaderContext, stats: LoaderStats, outcome: Reques
     record.duration = frag.duration
   }
   return record
+}
+
+/**
+ * Response headers from the `networkDetails` hls.js passes to loader callbacks: the
+ * `XMLHttpRequest` for the default XHR loader, or the `Response` for the fetch loader.
+ */
+export function extractHeaders(networkDetails: unknown): [string, string][] | undefined {
+  if (!networkDetails || typeof networkDetails !== 'object') return undefined
+  if ('getAllResponseHeaders' in networkDetails && typeof networkDetails.getAllResponseHeaders === 'function') {
+    const raw = (networkDetails as XMLHttpRequest).getAllResponseHeaders()
+    if (!raw) return undefined
+    return raw
+      .trim()
+      .split(/[\r\n]+/)
+      .map((line): [string, string] => {
+        const i = line.indexOf(':')
+        return [line.slice(0, i).trim().toLowerCase(), line.slice(i + 1).trim()]
+      })
+      .filter(([name]) => name)
+  }
+  if ('headers' in networkDetails && networkDetails.headers instanceof Headers) {
+    return [...networkDetails.headers.entries()]
+  }
+  return undefined
 }
 
 /** Sink errors must never break playback. */
@@ -142,6 +171,7 @@ export function createMonitoringLoader(Base: LoaderConstructor, sink: LoaderSink
         onSuccess: (response, stats, ctx, networkDetails) => {
           safely(() => {
             const record = buildRecord(ctx, stats, 'success', response.code)
+            if (record.kind === 'fragment') record.headers = extractHeaders(networkDetails)
             const data = response.data
             sink.onRequest(record)
             if (typeof data === 'string' && record.kind !== 'fragment' && record.kind !== 'key') {
@@ -156,7 +186,11 @@ export function createMonitoringLoader(Base: LoaderConstructor, sink: LoaderSink
           callbacks.onSuccess(response, stats, ctx, networkDetails)
         },
         onError: (error, ctx, networkDetails, stats) => {
-          safely(() => sink.onRequest(buildRecord(ctx, stats, 'error', error.code)))
+          safely(() => {
+            const record = buildRecord(ctx, stats, 'error', error.code)
+            if (record.kind === 'fragment') record.headers = extractHeaders(networkDetails)
+            sink.onRequest(record)
+          })
           callbacks.onError(error, ctx, networkDetails, stats)
         },
         onTimeout: (stats, ctx, networkDetails) => {

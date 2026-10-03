@@ -131,7 +131,7 @@ export function checkTsContinuity(
   return analysis.pids
     .filter((p) => p.ccErrors > 0)
     .map((p) => {
-      const label = pidLabel(p.pid, analysis.streams.find((s) => s.pid === p.pid)?.streamType)
+      const label = pidLabel(p.pid, analysis.streams.find((s) => s.pid === p.pid)?.streamType, p.kind)
       return {
         checkId: 'ts-continuity' as const,
         key: `ts-continuity|${track}:${level}|${p.pid}`,
