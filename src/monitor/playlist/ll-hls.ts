@@ -30,6 +30,11 @@ function allParts(playlist: MediaPlaylist): MediaPart[] {
   return [...playlist.segments.flatMap((s) => s.parts ?? []), ...playlist.pendingParts]
 }
 
+/** True when the session has seen LL-HLS: a playlist with PART-TARGET, or any part request. */
+export function sessionUsesLlHls(playlists: readonly { ll?: Pick<LlSummary, 'partTarget'> }[], partCount: number): boolean {
+  return partCount > 0 || playlists.some((r) => r.ll?.partTarget !== undefined)
+}
+
 /** True when the playlist uses any LL-HLS feature. */
 export function isLowLatency(playlist: MediaPlaylist): boolean {
   return playlist.partTarget !== undefined || playlist.pendingParts.length > 0 || playlist.segments.some((s) => s.parts?.length)

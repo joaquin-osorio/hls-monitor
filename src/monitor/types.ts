@@ -12,6 +12,8 @@ export type SessionPhase = 'loading' | 'ready' | 'fatal' | 'unsupported'
 
 export interface SourceInfo {
   url: string
+  /** `performance.now()` when the session was created. */
+  startedAt: number
   phase: SessionPhase
   /** Known once the first playlist is parsed. */
   kind?: 'master' | 'media'

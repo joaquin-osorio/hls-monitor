@@ -78,7 +78,7 @@ export class MonitorSession {
   constructor(url: string, video: HTMLVideoElement, options: MonitorSessionOptions = {}) {
     this.video = video
     this.options = options
-    this.source = { url, phase: 'loading', mixedContent: isMixedContent(url, globalThis.location?.protocol ?? '') }
+    this.source = { url, startedAt: performance.now(), phase: 'loading', mixedContent: isMixedContent(url, globalThis.location?.protocol ?? '') }
     this.store = new ThrottledStore<MonitorSnapshot, SnapshotKey>(this.emptySnapshot(), (dirty, prev) =>
       this.buildSnapshot(dirty, prev),
     )

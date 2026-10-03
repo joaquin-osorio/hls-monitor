@@ -141,6 +141,27 @@ hls.js, so they are not throttled and not shown in the network table; the panel 
 were made. They are aborted on `destroy()`. `compareVariants` (`alignment.ts`) then compares the
 playlists (see `docs/metrics.md`). Alternate renditions (EXT-X-MEDIA) are not probed.
 
+## Session report (`report/build-report.ts`)
+
+`buildMarkdownReport(snapshot, ctx)` renders the whole `MonitorSnapshot` as Markdown: panel-style
+summaries, full tables of every record (segments, playlist loads, parts, errors, findings,
+stalls, alignment issues, per-PID continuity), and the raw time series (samples, loudness) and
+per-segment details (PMT streams, PIDs, response headers) as appendices.
+
+- It is a pure function. Everything outside the snapshot comes in through `ReportContext`:
+  `performance.timeOrigin`, the generation time, the throttle profile, the requested variant and
+  whether the loudness meter is on. That keeps tests deterministic and the engine free of React
+  state.
+- "Everything" means what the engine still holds: the 30-minute retention window and the hard
+  buffer capacities. The report states the covered range. Loudness data only exists while the
+  meter is on; stopping the meter discards it.
+- Times are ISO 8601 UTC (`timeOrigin + t`), not the local clock format the panels use, so a
+  report stays unambiguous when read elsewhere. The file name uses a UTC timestamp too.
+- Table cells go through `escapeCell` (`|` escaped, line breaks collapsed), because messages and
+  URLs come from the server and hls.js.
+- Panels and report share their aggregations through the engine (`summarizeChecks`,
+  `framesByLevel`, `continuityByPid`, `sessionUsesLlHls`) so they can't disagree.
+
 ## Error classification
 
 The single source is the hls.js `ERROR` event. `classifyHlsError` maps it to

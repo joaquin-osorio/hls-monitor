@@ -20,6 +20,7 @@ import { VariantsPanel } from '@/components/variants-panel'
 import { useMonitor } from '@/hooks/use-monitor'
 import { useQueryState } from '@/hooks/use-query-state'
 import type { ThrottleProfile } from '@/monitor/network-shaper'
+import { sessionUsesLlHls } from '@/monitor/playlist/ll-hls'
 
 const SAMPLE_STREAMS = [
   { label: 'VOD · TS · multi-variant (Mux)', url: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8' },
@@ -110,7 +111,7 @@ function App() {
               <AlignmentPanel report={snapshot.alignment} source={snapshot.source} />
             </div>
             <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-              <SpecChecksPanel findings={snapshot.findings} lowLatency={snapshot.playlists.some((r) => r.ll?.partTarget !== undefined) || snapshot.parts.length > 0} />
+              <SpecChecksPanel findings={snapshot.findings} lowLatency={sessionUsesLlHls(snapshot.playlists, snapshot.parts.length)} />
               <ErrorLog errors={snapshot.errors} />
             </div>
             <SegmentInspector
