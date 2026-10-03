@@ -1,5 +1,6 @@
 import { CartesianGrid, Line, LineChart, ReferenceArea, XAxis, YAxis } from 'recharts'
 import { type ChartConfig, ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
+import { downsample } from '@/lib/downsample'
 import { formatClock } from '@/lib/format'
 
 export interface Band {
@@ -18,11 +19,11 @@ interface TimeSeriesChartProps<T extends { t: number }> {
   className?: string
 }
 
-/** Line chart over `performance.now()` time with a wall-clock axis. No animation: data updates every 500 ms. */
+/** Line chart over `performance.now()` time with a wall-clock axis. No animation: data updates every 500 ms. Long series are thinned with `downsample` to keep renders cheap. */
 export function TimeSeriesChart<T extends { t: number }>({ data, config, series, unit, bands = [], className }: TimeSeriesChartProps<T>) {
   return (
     <ChartContainer config={config} className={className ?? 'aspect-auto h-48 w-full'}>
-      <LineChart data={data} margin={{ left: 0, right: 8, top: 8 }}>
+      <LineChart data={downsample(data, series)} margin={{ left: 0, right: 8, top: 8 }}>
         <CartesianGrid vertical={false} />
         <XAxis
           dataKey="t"
