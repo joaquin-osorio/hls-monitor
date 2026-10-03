@@ -11,6 +11,7 @@ import { LoudnessPanel } from '@/components/loudness-panel'
 import { NetworkTable } from '@/components/network-table'
 import { PlayerPanel } from '@/components/player-panel'
 import { PlaylistHealthPanel } from '@/components/playlist-health-panel'
+import { ReportButton } from '@/components/report-button'
 import { SegmentInspector } from '@/components/segment-inspector'
 import { SegmentTimeline } from '@/components/segment-timeline'
 import { SpecChecksPanel } from '@/components/spec-checks-panel'
@@ -57,6 +58,9 @@ function App() {
       <header className="flex flex-col gap-3 md:flex-row md:items-center">
         <h1 className="shrink-0 font-heading text-lg font-semibold">HLS Monitor</h1>
         <UrlForm key={query.url ?? ''} initialUrl={query.url ?? ''} onSubmit={load} />
+        {snapshot && (
+          <ReportButton snapshot={snapshot} throttle={throttle} requestedVariant={query.variant} loudnessEnabled={loudness} />
+        )}
       </header>
 
       {!query.url && (

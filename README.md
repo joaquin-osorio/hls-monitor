@@ -43,6 +43,10 @@ media and the playback in real time. Everything runs in the browser; there is no
 **Network simulation**
 - Bandwidth and latency throttling presets (or custom values) to see how playback and ABR react
 
+**Reports**
+- Download everything collected in the session as a Markdown report: summaries, every segment,
+  playlist load, error and finding, and the raw time series
+
 ## How it works
 
 The monitor wraps the hls.js loader, so it observes every request hls.js makes without
