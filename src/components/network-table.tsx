@@ -82,7 +82,9 @@ export const NetworkTable = memo(function NetworkTable({ segments, onInspect }: 
                     <TableCell className={cn('text-right', r.ratio !== undefined && r.ratio >= SLOW_RATIO && 'text-status-slow')}>
                       {r.ratio?.toFixed(2) ?? '—'}
                     </TableCell>
-                    <TableCell className={cn('text-right', r.attempts > 1 && 'text-status-slow')}>{r.attempts}</TableCell>
+                    <TableCell className={cn('text-right', (r.attempts > 1 || !!r.partErrors) && 'text-status-slow')}>
+                      {r.attempts > 0 ? r.attempts : <span title="Delivered as LL-HLS parts">{r.partsLoaded}p</span>}
+                    </TableCell>
                     <TableCell className="font-mono">
                       {r.tsError ? (
                         <Badge variant="destructive" title={r.tsError}>

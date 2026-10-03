@@ -3,7 +3,8 @@
  *
  * It reports what the server actually sent, without the normalization hls.js applies, so spec
  * checks can flag things hls.js tolerates. Only the tags the monitor uses are parsed; everything
- * else is ignored. LL-HLS parts and alternate renditions (EXT-X-MEDIA) are out of scope for v0.
+ * else is ignored. LL-HLS tags (parts, preload hints, server control, delta updates) are parsed;
+ * alternate renditions (EXT-X-MEDIA) are not.
  */
 
 export interface Resolution {
@@ -27,6 +28,39 @@ export interface MasterPlaylist {
   variants: VariantStream[]
 }
 
+/** An LL-HLS partial segment (EXT-X-PART). */
+export interface MediaPart {
+  uri: string
+  /** DURATION in seconds. */
+  duration: number
+  independent: boolean
+  gap: boolean
+  byteRange?: string
+}
+
+export interface PreloadHint {
+  type: 'PART' | 'MAP'
+  uri: string
+  byteRangeStart?: number
+  byteRangeLength?: number
+}
+
+export interface RenditionReport {
+  uri: string
+  lastMsn?: number
+  lastPart?: number
+}
+
+/** EXT-X-SERVER-CONTROL */
+export interface ServerControl {
+  canBlockReload: boolean
+  /** CAN-SKIP-UNTIL in seconds. */
+  canSkipUntil?: number
+  canSkipDateRanges: boolean
+  holdBack?: number
+  partHoldBack?: number
+}
+
 export interface MediaSegment {
   /** Media sequence number. */
   sn: number
@@ -44,6 +78,8 @@ export interface MediaSegment {
    * segment's date + duration when there is no discontinuity in between.
    */
   programDateTime?: number
+  /** EXT-X-PART tags preceding the segment URI (LL-HLS). */
+  parts?: MediaPart[]
 }
 
 export interface MediaPlaylist {
@@ -53,7 +89,19 @@ export interface MediaPlaylist {
   discontinuitySequence: number
   playlistType?: string
   endList: boolean
+  /**
+   * EXT-X-SKIP SKIPPED-SEGMENTS of a delta update (`_HLS_skip`): that many segments after
+   * MEDIA-SEQUENCE were omitted, so the first listed segment is `mediaSequence + skippedSegments`.
+   */
+  skippedSegments: number
   segments: MediaSegment[]
+  /** EXT-X-PART-INF PART-TARGET in seconds. */
+  partTarget?: number
+  serverControl?: ServerControl
+  /** Parts listed after the last complete segment: the segment being produced (SN = last + 1). */
+  pendingParts: MediaPart[]
+  preloadHints: PreloadHint[]
+  renditionReports: RenditionReport[]
 }
 
 export type Playlist = MasterPlaylist | MediaPlaylist
@@ -127,14 +175,32 @@ function parseMaster(lines: string[], baseUrl?: string): MasterPlaylist {
   return { kind: 'master', variants }
 }
 
+function parsePart(value: string, baseUrl?: string): MediaPart | undefined {
+  const a = parseAttributes(value)
+  const duration = toNumber(a['DURATION'])
+  if (!a['URI'] || duration === undefined) return undefined
+  return {
+    uri: resolveUri(a['URI'], baseUrl),
+    duration,
+    independent: a['INDEPENDENT'] === 'YES',
+    gap: a['GAP'] === 'YES',
+    byteRange: a['BYTERANGE'],
+  }
+}
+
 function parseMedia(lines: string[], baseUrl?: string): MediaPlaylist {
   const playlist: MediaPlaylist = {
     kind: 'media',
     mediaSequence: 0,
     discontinuitySequence: 0,
     endList: false,
+    skippedSegments: 0,
     segments: [],
+    pendingParts: [],
+    preloadHints: [],
+    renditionReports: [],
   }
+  let parts: MediaPart[] = []
   let duration: number | undefined
   let discontinuity = false
   let gap = false
@@ -151,14 +217,16 @@ function parseMedia(lines: string[], baseUrl?: string): MediaPlaylist {
       const programDateTime =
         pdt ?? (prev?.programDateTime !== undefined && !discontinuity ? prev.programDateTime + prev.duration * 1000 : undefined)
       playlist.segments.push({
-        sn: playlist.mediaSequence + playlist.segments.length,
+        sn: playlist.mediaSequence + playlist.skippedSegments + playlist.segments.length,
         uri: resolveUri(line, baseUrl),
         duration,
         discontinuity,
         cc,
         gap,
         programDateTime,
+        ...(parts.length > 0 && { parts }),
       })
+      parts = []
       duration = undefined
       discontinuity = false
       gap = false
@@ -201,7 +269,53 @@ function parseMedia(lines: string[], baseUrl?: string): MediaPlaylist {
         pdt = Number.isNaN(ms) ? undefined : ms
         break
       }
+      case '#EXT-X-PART-INF':
+        playlist.partTarget = toNumber(parseAttributes(value)['PART-TARGET'])
+        break
+      case '#EXT-X-SERVER-CONTROL': {
+        const a = parseAttributes(value)
+        playlist.serverControl = {
+          canBlockReload: a['CAN-BLOCK-RELOAD'] === 'YES',
+          canSkipUntil: toNumber(a['CAN-SKIP-UNTIL']),
+          canSkipDateRanges: a['CAN-SKIP-DATERANGES'] === 'YES',
+          holdBack: toNumber(a['HOLD-BACK']),
+          partHoldBack: toNumber(a['PART-HOLD-BACK']),
+        }
+        break
+      }
+      case '#EXT-X-SKIP':
+        playlist.skippedSegments = toNumber(parseAttributes(value)['SKIPPED-SEGMENTS']) ?? 0
+        break
+      case '#EXT-X-PART': {
+        const part = parsePart(value, baseUrl)
+        if (part) parts.push(part)
+        break
+      }
+      case '#EXT-X-PRELOAD-HINT': {
+        const a = parseAttributes(value)
+        if ((a['TYPE'] === 'PART' || a['TYPE'] === 'MAP') && a['URI']) {
+          playlist.preloadHints.push({
+            type: a['TYPE'],
+            uri: resolveUri(a['URI'], baseUrl),
+            byteRangeStart: toNumber(a['BYTERANGE-START']),
+            byteRangeLength: toNumber(a['BYTERANGE-LENGTH']),
+          })
+        }
+        break
+      }
+      case '#EXT-X-RENDITION-REPORT': {
+        const a = parseAttributes(value)
+        if (a['URI']) {
+          playlist.renditionReports.push({
+            uri: resolveUri(a['URI'], baseUrl),
+            lastMsn: toNumber(a['LAST-MSN']),
+            lastPart: toNumber(a['LAST-PART']),
+          })
+        }
+        break
+      }
     }
   }
+  playlist.pendingParts = parts
   return playlist
 }

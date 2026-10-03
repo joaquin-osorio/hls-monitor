@@ -32,13 +32,45 @@ export interface RequestRecord {
   level?: number
   /** `main`, `audio` or `subtitle`. Fragment only. */
   track?: string
-  /** EXTINF duration in seconds. Fragment only. */
+  /** EXTINF duration in seconds (of the parent segment for parts). Fragment only. */
   duration?: number
+  /** LL-HLS part index inside segment `sn`, when this request loaded a part. */
+  part?: number
+  /** Part DURATION in seconds. Part only. */
+  partDuration?: number
+  /** Part INDEPENDENT=YES. Part only. */
+  independent?: boolean
+  /** Playlist only: LL-HLS delivery directives in the request URL (blocking playlist reload). */
+  blocking?: DeliveryDirectives
   /**
    * Response headers visible to page JS, lower-cased names. Fragment only. CORS limits them to
    * the safelisted ones plus whatever `Access-Control-Expose-Headers` lists.
    */
   headers?: [string, string][]
+}
+
+export interface DeliveryDirectives {
+  /** `_HLS_msn`: a blocking reload until this media sequence number is available. */
+  msn?: number
+  part?: number
+  /** `_HLS_skip`: `YES` or `v2`. */
+  skip?: string
+}
+
+/** `_HLS_msn` / `_HLS_part` / `_HLS_skip` query parameters of a playlist URL, if present. */
+export function parseDeliveryDirectives(url: string): DeliveryDirectives | undefined {
+  let params: URLSearchParams
+  try {
+    params = new URL(url).searchParams
+  } catch {
+    return undefined
+  }
+  const num = (name: string) => {
+    const v = params.get(name)
+    return v === null || !/^\d+$/.test(v) ? undefined : Number(v)
+  }
+  const directives: DeliveryDirectives = { msn: num('_HLS_msn'), part: num('_HLS_part'), skip: params.get('_HLS_skip') ?? undefined }
+  return directives.msn !== undefined || directives.skip !== undefined ? directives : undefined
 }
 
 export interface LoaderSink {
@@ -86,6 +118,13 @@ function buildRecord(context: LoaderContext, stats: LoaderStats, outcome: Reques
     record.level = frag.level
     record.track = frag.type
     record.duration = frag.duration
+    if (context.part) {
+      record.part = context.part.index
+      record.partDuration = context.part.duration
+      record.independent = context.part.independent
+    }
+  } else if (record.kind !== 'key' && record.kind !== 'other') {
+    record.blocking = parseDeliveryDirectives(context.url)
   }
   return record
 }
@@ -177,7 +216,8 @@ export function createMonitoringLoader(Base: LoaderConstructor, sink: LoaderSink
             if (typeof data === 'string' && record.kind !== 'fragment' && record.kind !== 'key') {
               sink.onPlaylist(record, data, ctx as PlaylistLoaderContext)
             }
-            if (record.kind === 'fragment' && data instanceof ArrayBuffer) {
+            // Parts rarely start with PAT/PMT, so they are not analyzed.
+            if (record.kind === 'fragment' && record.part === undefined && data instanceof ArrayBuffer) {
               if (looksLikeTs(new Uint8Array(data, 0, Math.min(data.byteLength, 3 * 188)))) {
                 sink.onTsSegment(record, () => data.slice(0))
               }

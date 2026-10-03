@@ -177,7 +177,15 @@ export function SegmentInspector({ segmentKey, record, variants, onClose }: Segm
         {record && (
           <div className="flex flex-col gap-5 px-4 pb-6">
             <Section title="Request">
-              <p className="font-mono text-xs break-all">{record.url ?? '—'}</p>
+              {record.attempts === 0 && record.partsLoaded !== undefined ? (
+                <p className="text-xs">
+                  Delivered as {record.partsLoaded} LL-HLS parts
+                  {record.partErrors ? <span className="text-status-slow"> ({record.partErrors} failed attempts)</span> : null}. Part
+                  timings are in the LL-HLS panel.
+                </p>
+              ) : (
+                <p className="font-mono text-xs break-all">{record.url ?? '—'}</p>
+              )}
               <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <Field label="Status">
                   <Badge variant={record.status === 'error' ? 'destructive' : 'secondary'}>{record.status}</Badge>{' '}

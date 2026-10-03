@@ -25,8 +25,14 @@ export interface SegmentRecord {
   status: SegmentStatus
   /** Why a `gap` segment is a gap: tagged with EXT-X-GAP, or removed before it could be seen. */
   gapReason?: 'tag' | 'missed'
-  /** Network attempts, including retries. Aborts (e.g. on level switch) are not counted. */
+  /**
+   * Full-segment network attempts, including retries. Aborts (e.g. on level switch) are not
+   * counted. 0 for segments only delivered as LL-HLS parts (or not loaded at all, for gaps).
+   */
   attempts: number
+  /** LL-HLS: parts of this segment loaded successfully / failed. */
+  partsLoaded?: number
+  partErrors?: number
   httpStatus?: number
   /** Response headers of the latest attempt (only those CORS exposes). */
   headers?: [string, string][]
@@ -88,6 +94,7 @@ export class SegmentLog {
     if (req.kind !== 'fragment' || req.sn === undefined || req.level === undefined || req.outcome === 'abort') {
       return false
     }
+    if (req.part !== undefined) return this.recordPart(req, req.sn, req.level)
     const key = segmentKey(req.track ?? 'main', req.level, req.sn)
     const metrics = networkMetrics(req)
     const fields = {
@@ -113,6 +120,50 @@ export class SegmentLog {
         duration: req.duration ?? 0,
         attempts: 1,
         ...fields,
+      })
+    }
+    return true
+  }
+
+  /**
+   * Folds an LL-HLS part attempt into its segment's record. Part requests are usually blocking
+   * (preload hints), so their TTFB is server hold time: network metrics are left undefined and
+   * only bytes and part counts accumulate. A full-segment attempt, if any, keeps precedence.
+   */
+  private recordPart(req: RequestRecord, sn: number, level: number): boolean {
+    const track = req.track ?? 'main'
+    const key = segmentKey(track, level, sn)
+    const ok = req.outcome === 'success'
+    const updated = this.buf.update(
+      (r) => r.key === key,
+      (r) => {
+        if (r.attempts > 0) return r
+        return {
+          ...r,
+          duration: Math.max(r.duration, req.duration ?? 0),
+          status: ok ? 'ok' : 'error',
+          gapReason: undefined,
+          httpStatus: req.status,
+          bytes: ok ? (r.bytes ?? 0) + req.bytes : r.bytes,
+          partsLoaded: (r.partsLoaded ?? 0) + (ok ? 1 : 0),
+          partErrors: (r.partErrors ?? 0) + (ok ? 0 : 1),
+        }
+      },
+    )
+    if (!updated) {
+      this.buf.push({
+        t: req.start,
+        key,
+        sn,
+        level,
+        track,
+        duration: req.duration ?? 0,
+        status: ok ? 'ok' : 'error',
+        httpStatus: req.status,
+        attempts: 0,
+        bytes: ok ? req.bytes : undefined,
+        partsLoaded: ok ? 1 : 0,
+        partErrors: ok ? 0 : 1,
       })
     }
     return true

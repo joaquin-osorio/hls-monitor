@@ -52,7 +52,9 @@ export class PlaylistHealthTracker {
   private readonly states = new Map<string, PlaylistState>()
 
   track(key: string, url: string, playlist: MediaPlaylist, t: number): PlaylistRefresh {
-    const lastSn = playlist.mediaSequence + playlist.segments.length - 1
+    // Delta updates (EXT-X-SKIP) omit the oldest segments but still count them.
+    const segmentCount = playlist.skippedSegments + playlist.segments.length
+    const lastSn = playlist.mediaSequence + segmentCount - 1
     const prev = this.states.get(key)
     this.states.set(key, { t, mediaSequence: playlist.mediaSequence, lastSn, endList: playlist.endList })
 
@@ -62,7 +64,7 @@ export class PlaylistHealthTracker {
       url,
       mediaSequence: playlist.mediaSequence,
       lastSn,
-      segmentCount: playlist.segments.length,
+      segmentCount,
       targetDuration: playlist.targetDuration,
       endList: playlist.endList,
       changed: true,

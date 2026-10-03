@@ -76,6 +76,27 @@ describe('SegmentLog', () => {
     ])
   })
 
+  it('folds LL-HLS part attempts into one segment record without network metrics', () => {
+    const log = new SegmentLog()
+    const part = (index: number, overrides: Partial<RequestRecord> = {}) =>
+      frag({ part: index, partDuration: 1, bytes: 100_000, url: `https://cdn/s10.${index}.ts`, ...overrides })
+    log.recordAttempt(part(0))
+    log.recordAttempt(part(1, { outcome: 'error', status: 503, bytes: 0 }))
+    log.recordAttempt(part(1))
+    const [r] = log.toArray()
+    expect(log.toArray()).toHaveLength(1)
+    expect(r).toMatchObject({ sn: 10, status: 'ok', attempts: 0, bytes: 200_000, partsLoaded: 2, partErrors: 1 })
+    expect(r.ttfbMs).toBeUndefined()
+    expect(r.url).toBeUndefined()
+  })
+
+  it('lets a full-segment attempt take precedence over parts', () => {
+    const log = new SegmentLog()
+    log.recordAttempt(frag())
+    log.recordAttempt(frag({ part: 0, bytes: 5 }))
+    expect(log.toArray()[0]).toMatchObject({ attempts: 1, bytes: 1_000_000 })
+  })
+
   it('attaches the TS analysis to its segment', () => {
     const log = new SegmentLog()
     log.recordAttempt(frag())

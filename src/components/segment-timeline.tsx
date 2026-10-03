@@ -22,6 +22,7 @@ const STATUS_LABEL: Record<SegmentStatus, string> = {
 function describe(r: SegmentRecord): string {
   const lines = [`SN ${r.sn} · level ${r.level} · ${r.track} · ${STATUS_LABEL[r.status]}`, `EXTINF ${r.duration}s`]
   if (r.status === 'gap') lines.push(r.gapReason === 'tag' ? 'EXT-X-GAP' : 'Left the playlist before it was seen')
+  else if (r.attempts === 0 && r.partsLoaded !== undefined) lines.push(`delivered as ${r.partsLoaded} LL-HLS parts`)
   else {
     lines.push(`total ${formatMs(r.totalMs)} · TTFB ${formatMs(r.ttfbMs)} · ratio ${r.ratio?.toFixed(2) ?? '—'}`)
     lines.push(`throughput ${formatBitrate(r.throughputBps)} · attempts ${r.attempts}`)

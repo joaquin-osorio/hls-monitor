@@ -110,3 +110,74 @@ d.ts
     expect(() => parsePlaylist('#EXTM3U\n#EXT-X-TARGETDURATION:4\nseg.ts\n')).toThrow(PlaylistParseError)
   })
 })
+
+const LL_HLS = `#EXTM3U
+#EXT-X-TARGETDURATION:4
+#EXT-X-VERSION:9
+#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,CAN-SKIP-UNTIL=24,PART-HOLD-BACK=3.012
+#EXT-X-PART-INF:PART-TARGET=1.004
+#EXT-X-MEDIA-SEQUENCE:100
+#EXTINF:4.0,
+s100.ts
+#EXT-X-PART:DURATION=1.0,URI="s101.0.ts",INDEPENDENT=YES
+#EXT-X-PART:DURATION=1.0,URI="s101.1.ts"
+#EXT-X-PART:DURATION=1.0,URI="s101.2.ts"
+#EXT-X-PART:DURATION=1.0,URI="s101.3.ts"
+#EXTINF:4.0,
+s101.ts
+#EXT-X-PART:DURATION=1.0,URI="s102.0.ts",INDEPENDENT=YES
+#EXT-X-PART:DURATION=1.0,URI="s102.1.ts",GAP=YES
+#EXT-X-PRELOAD-HINT:TYPE=PART,URI="s102.2.ts"
+#EXT-X-RENDITION-REPORT:URI="../v1/index.m3u8",LAST-MSN=101,LAST-PART=1
+`
+
+describe('parsePlaylist (LL-HLS)', () => {
+  const p = parsePlaylist(LL_HLS, 'https://cdn/v0/index.m3u8')
+  if (p.kind !== 'media') throw new Error('expected media playlist')
+
+  it('reads server control and the part target', () => {
+    expect(p.partTarget).toBe(1.004)
+    expect(p.serverControl).toEqual({
+      canBlockReload: true,
+      canSkipUntil: 24,
+      canSkipDateRanges: false,
+      holdBack: undefined,
+      partHoldBack: 3.012,
+    })
+  })
+
+  it('attaches parts to their segment and keeps trailing parts as pending', () => {
+    expect(p.segments.map((s) => [s.sn, s.parts?.length])).toEqual([
+      [100, undefined],
+      [101, 4],
+    ])
+    expect(p.segments[1].parts?.[0]).toEqual({
+      uri: 'https://cdn/v0/s101.0.ts',
+      duration: 1,
+      independent: true,
+      gap: false,
+      byteRange: undefined,
+    })
+    expect(p.pendingParts.map((x) => [x.uri.split('/').pop(), x.independent, x.gap])).toEqual([
+      ['s102.0.ts', true, false],
+      ['s102.1.ts', false, true],
+    ])
+  })
+
+  it('reads preload hints and rendition reports', () => {
+    expect(p.preloadHints).toEqual([{ type: 'PART', uri: 'https://cdn/v0/s102.2.ts', byteRangeStart: undefined, byteRangeLength: undefined }])
+    expect(p.renditionReports).toEqual([{ uri: 'https://cdn/v1/index.m3u8', lastMsn: 101, lastPart: 1 }])
+  })
+
+  it('numbers segments after EXT-X-SKIP from MEDIA-SEQUENCE + SKIPPED-SEGMENTS', () => {
+    const delta = parsePlaylist(`#EXTM3U
+#EXT-X-TARGETDURATION:4
+#EXT-X-MEDIA-SEQUENCE:100
+#EXT-X-SKIP:SKIPPED-SEGMENTS=6
+#EXTINF:4.0,
+s106.ts`)
+    if (delta.kind !== 'media') throw new Error('expected media playlist')
+    expect(delta.skippedSegments).toBe(6)
+    expect(delta.segments[0].sn).toBe(106)
+  })
+})

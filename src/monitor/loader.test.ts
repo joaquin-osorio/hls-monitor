@@ -7,7 +7,7 @@ import type {
   LoaderStats,
 } from 'hls.js'
 import { describe, expect, it, vi } from 'vitest'
-import { createMonitoringLoader, extractHeaders, type LoaderSink } from './loader'
+import { createMonitoringLoader, extractHeaders, type LoaderSink, parseDeliveryDirectives } from './loader'
 
 function stats(start: number, first: number, end: number, loaded: number): LoaderStats {
   return {
@@ -128,6 +128,23 @@ describe('createMonitoringLoader', () => {
     expect(hlsCallbacks.onTimeout).toHaveBeenCalledOnce()
   })
 
+  it('records LL-HLS part requests with their index and never analyzes them', () => {
+    const { sink, loader, hlsCallbacks } = setup()
+    const context = { ...fragContext('https://cdn/seg7.2.ts'), part: { index: 2, duration: 1.0, independent: true } } as unknown as LoaderContext
+    loader.load(context, {} as LoaderConfiguration, hlsCallbacks)
+    FakeLoader.last.callbacks.onSuccess({ url: '', data: tsBytes(), code: 200 }, stats(0, 1, 2, 752), context, null)
+    expect(sink.onRequest).toHaveBeenCalledWith(expect.objectContaining({ sn: 7, part: 2, partDuration: 1, independent: true, duration: 4 }))
+    expect(sink.onTsSegment).not.toHaveBeenCalled()
+  })
+
+  it('records delivery directives of blocking playlist reloads', () => {
+    const { sink, loader, hlsCallbacks } = setup()
+    const context = { url: 'https://cdn/v0.m3u8?_HLS_msn=120&_HLS_part=3', type: 'level', responseType: 'text' } as LoaderContext
+    loader.load(context, {} as LoaderConfiguration, hlsCallbacks)
+    FakeLoader.last.callbacks.onSuccess({ url: context.url, data: '#EXTM3U', code: 200 }, stats(0, 900, 910, 7), context, null)
+    expect(sink.onRequest.mock.calls[0][0].blocking).toEqual({ msn: 120, part: 3, skip: undefined })
+  })
+
   it('records the response headers of fragments', () => {
     const { sink, loader, hlsCallbacks } = setup()
     loader.load(fragContext(), {} as LoaderConfiguration, hlsCallbacks)
@@ -161,5 +178,14 @@ describe('extractHeaders', () => {
     expect(extractHeaders({ headers: new Headers({ 'Content-Length': '10' }) })).toEqual([['content-length', '10']])
     expect(extractHeaders(null)).toBeUndefined()
     expect(extractHeaders({ getAllResponseHeaders: () => '' })).toBeUndefined()
+  })
+})
+
+describe('parseDeliveryDirectives', () => {
+  it('reads _HLS_msn, _HLS_part and _HLS_skip', () => {
+    expect(parseDeliveryDirectives('https://cdn/a.m3u8?_HLS_msn=5&_HLS_skip=YES')).toEqual({ msn: 5, part: undefined, skip: 'YES' })
+    expect(parseDeliveryDirectives('https://cdn/a.m3u8?_HLS_skip=v2')).toEqual({ msn: undefined, part: undefined, skip: 'v2' })
+    expect(parseDeliveryDirectives('https://cdn/a.m3u8?token=1')).toBeUndefined()
+    expect(parseDeliveryDirectives('not a url')).toBeUndefined()
   })
 })

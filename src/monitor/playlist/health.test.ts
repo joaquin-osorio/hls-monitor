@@ -10,6 +10,10 @@ function live(mediaSequence: number, count: number, endList = false): MediaPlayl
     mediaSequence,
     discontinuitySequence: 0,
     endList,
+    skippedSegments: 0,
+    pendingParts: [],
+    preloadHints: [],
+    renditionReports: [],
     segments: Array.from({ length: count }, (_, i) => ({
       sn: mediaSequence + i,
       uri: `s${mediaSequence + i}.ts`,
@@ -74,5 +78,14 @@ describe('PlaylistHealthTracker', () => {
     const r = tracker.track('main:0', URL, live(500, 3), 60_000)
     expect(r.intervalMs).toBeUndefined()
     expect(r.missedSns).toEqual([])
+  })
+
+  it('counts skipped segments of a delta update, so they are not reported as missed', () => {
+    const tracker = new PlaylistHealthTracker()
+    tracker.track('main:0', URL, live(10, 10), 1000)
+    // Delta update: MSN 11, the first 6 segments skipped, 4 listed (17..20) + 1 new.
+    const delta = { ...live(17, 4), mediaSequence: 11, skippedSegments: 6 }
+    const r = tracker.track('main:0', URL, delta, 2000)
+    expect(r).toMatchObject({ lastSn: 20, segmentCount: 10, newSegments: 1, missedSns: [] })
   })
 })
