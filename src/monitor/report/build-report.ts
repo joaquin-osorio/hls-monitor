@@ -103,16 +103,19 @@ export function buildMarkdownReport(snapshot: MonitorSnapshot, ctx: ReportContex
 
 type At = (t: number) => string
 
-function header({ source }: MonitorSnapshot, ctx: ReportContext, at: At): string {
-  const from = Math.max(source.startedAt, ctx.now - RETENTION_MS)
+function header(snapshot: MonitorSnapshot, ctx: ReportContext, at: At): string {
+  const { source } = snapshot
+  // Oldest data actually held. A buffer that hit its capacity starts later than the window.
+  const firsts = [snapshot.samples, snapshot.segments, snapshot.playlists, snapshot.parts].flatMap((s) => (s.length ? [s[0].t] : []))
+  const from = firsts.length ? Math.min(...firsts) : Math.max(source.startedAt, ctx.now - RETENTION_MS)
   return [
     '# HLS Monitor report',
     fields([
       ['Stream', source.url],
       ['Generated', at(ctx.now)],
     ]),
-    `> Covers everything the monitor still holds: the last ${RETENTION_MS / 60_000} minutes of the session ` +
-      `(${at(from)} to ${at(ctx.now)}). Times are UTC.` +
+    `> Covers everything the monitor still holds, from ${at(from)} to ${at(ctx.now)}. Each series keeps at most ` +
+      `the last ${RETENTION_MS / 60_000} minutes; very busy ones (e.g. LL-HLS parts) may start later. Times are UTC.` +
       (ctx.throttle ? ' **Network simulation was on**: request timings, throughput and ABR reflect the simulated link.' : ''),
   ].join('\n\n')
 }

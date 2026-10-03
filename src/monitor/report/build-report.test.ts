@@ -145,6 +145,12 @@ describe('buildMarkdownReport', () => {
     expect(report).toContain('- **Loudness meter:** off')
   })
 
+  it('states the range the retained data actually covers', () => {
+    const snapshot = { ...emptySnapshot(), samples: [sample(30_000), sample(45_000)], segments: [segment(1, { t: 20_000 })] }
+    expect(buildMarkdownReport(snapshot, ctx)).toContain('from 2026-10-03T12:00:20.000Z to 2026-10-03T12:01:00.000Z')
+    expect(buildMarkdownReport(emptySnapshot(), ctx)).toContain('from 2026-10-03T12:00:00.000Z to 2026-10-03T12:01:00.000Z')
+  })
+
   it('includes every collected record', () => {
     const snapshot = populatedSnapshot()
     const report = buildMarkdownReport(snapshot, ctx)
