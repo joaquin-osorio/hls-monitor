@@ -46,6 +46,49 @@ export interface Finding extends CheckObservation {
   lastSeen: number
 }
 
+export interface CheckDefinition {
+  id: CheckId
+  label: string
+  /** Only meaningful for LL-HLS streams; not applicable otherwise (unless it has findings). */
+  ll?: true
+}
+
+/** Every check, in display order, with its human-readable label. */
+export const CHECK_DEFINITIONS: readonly CheckDefinition[] = [
+  { id: 'target-exceeded', label: 'EXTINF within TARGETDURATION' },
+  { id: 'discontinuity', label: 'Discontinuities' },
+  { id: 'endlist-in-live', label: 'ENDLIST on a live playlist' },
+  { id: 'codecs-missing', label: 'CODECS declared on every variant' },
+  { id: 'codecs-undeclared', label: 'Segment codecs match CODECS' },
+  { id: 'ts-continuity', label: 'MPEG-TS continuity counters' },
+  { id: 'extinf-mismatch', label: 'EXTINF matches media duration' },
+  { id: 'variant-alignment', label: 'Variants aligned' },
+  { id: 'll-part-target', label: 'LL-HLS parts within PART-TARGET', ll: true },
+  { id: 'll-server-control', label: 'LL-HLS server control and hold-back', ll: true },
+  { id: 'll-blocking-reload', label: 'LL-HLS blocking reloads honored', ll: true },
+  { id: 'll-preload-hint', label: 'LL-HLS preload hints fulfilled', ll: true },
+]
+
+const SEVERITY_ORDER: Record<Severity, number> = { error: 0, warn: 1, info: 2 }
+
+export type CheckStatus = Severity | 'pass' | 'na'
+
+export interface CheckSummary extends CheckDefinition {
+  /** Worst severity among its findings; `pass` without findings, `na` for LL checks on non-LL streams. */
+  status: CheckStatus
+  /** Findings of this check, worst first. */
+  findings: Finding[]
+}
+
+/** One entry per check in `CHECK_DEFINITIONS` order, with its findings and overall status. */
+export function summarizeChecks(findings: readonly Finding[], lowLatency: boolean): CheckSummary[] {
+  return CHECK_DEFINITIONS.map((check) => {
+    const list = findings.filter((f) => f.checkId === check.id).sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
+    const status: CheckStatus = list[0]?.severity ?? (check.ll && !lowLatency ? 'na' : 'pass')
+    return { ...check, status, findings: list }
+  })
+}
+
 export function checkMasterPlaylist(master: MasterPlaylist, url: string): CheckObservation[] {
   const missing = master.variants.filter((v) => !v.codecs?.length)
   if (missing.length === 0) return []

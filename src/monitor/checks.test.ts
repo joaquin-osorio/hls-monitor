@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkDetectedCodecs, checkMasterPlaylist, checkMediaPlaylist, checkSegmentDuration, checkTsContinuity, FindingsLog } from './checks'
+import { checkDetectedCodecs, checkMasterPlaylist, checkMediaPlaylist, checkSegmentDuration, checkTsContinuity, FindingsLog, summarizeChecks, type Finding } from './checks'
 import { familyOfCodecString } from './codecs'
 import { PlaylistHealthTracker } from './playlist/health'
 import { type MediaPlaylist, parsePlaylist } from './playlist/parse'
@@ -146,5 +146,32 @@ describe('checkSegmentDuration', () => {
     expect(checkSegmentDuration('main', 0, 7, 'u', 6, 5.5)).toEqual([
       expect.objectContaining({ checkId: 'extinf-mismatch', key: 'extinf-mismatch|main:0', severity: 'warn', occurrence: 7 }),
     ])
+  })
+})
+
+describe('summarizeChecks', () => {
+  const finding = (checkId: Finding['checkId'], severity: Finding['severity'], key: string = checkId): Finding => ({
+    checkId,
+    key,
+    severity,
+    message: key,
+    count: 1,
+    firstSeen: 0,
+    lastSeen: 0,
+  })
+
+  it('reports the worst severity of each check and sorts its findings worst first', () => {
+    const summary = summarizeChecks([finding('discontinuity', 'info', 'a'), finding('discontinuity', 'error', 'b')], false)
+    const discontinuity = summary.find((c) => c.id === 'discontinuity')!
+    expect(discontinuity.status).toBe('error')
+    expect(discontinuity.findings.map((f) => f.key)).toEqual(['b', 'a'])
+    expect(summary.find((c) => c.id === 'target-exceeded')!.status).toBe('pass')
+  })
+
+  it('marks LL-HLS checks as not applicable on non-LL streams unless they have findings', () => {
+    const summary = summarizeChecks([finding('ll-preload-hint', 'warn')], false)
+    expect(summary.find((c) => c.id === 'll-part-target')!.status).toBe('na')
+    expect(summary.find((c) => c.id === 'll-preload-hint')!.status).toBe('warn')
+    expect(summarizeChecks([], true).find((c) => c.id === 'll-part-target')!.status).toBe('pass')
   })
 })
