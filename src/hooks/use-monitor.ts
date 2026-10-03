@@ -30,13 +30,16 @@ interface UseMonitorOptions {
   variant: VariantSelection
   onVariantRejected: () => void
   throttle: ThrottleProfile | null
+  /** Loudness meter on/off. Turn it on from a user gesture (it unmutes the video). */
+  loudness: boolean
 }
 
 /**
  * Runs one `MonitorSession` per (url, video element) pair and returns its throttled snapshot.
- * The variant and network throttle are synced into the live session without recreating it.
+ * The variant, network throttle and loudness meter are synced into the live session without
+ * recreating it.
  */
-export function useMonitor({ url, video, variant, onVariantRejected, throttle }: UseMonitorOptions): {
+export function useMonitor({ url, video, variant, onVariantRejected, throttle, loudness }: UseMonitorOptions): {
   session: MonitorSession | null
   snapshot: MonitorSnapshot | null
 } {
@@ -61,6 +64,10 @@ export function useMonitor({ url, video, variant, onVariantRejected, throttle }:
   useEffect(() => {
     session?.setThrottle(throttle)
   }, [session, throttle])
+
+  useEffect(() => {
+    session?.setLoudness(loudness)
+  }, [session, loudness])
 
   const snapshot = useSyncExternalStore(
     session ? session.store.subscribe : noSubscribe,

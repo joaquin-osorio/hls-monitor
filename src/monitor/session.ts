@@ -2,6 +2,8 @@ import Hls, { Events, type ErrorData, type LevelSwitchingData, type PlaylistLoad
 import type { VariantSelection } from '@/lib/query-state'
 import { alignmentObservations, buildAlignmentReport, type AlignmentReport, type VariantFetch } from './alignment'
 import { AlignmentProber } from './alignment-prober'
+import { audioGraphFor } from './audio/audio-graph'
+import { LoudnessMeter } from './audio/loudness-meter'
 import {
   checkDetectedCodecs,
   checkMasterPlaylist,
@@ -51,6 +53,7 @@ export class MonitorSession {
   private hls: Hls | null = null
   private analyzer: TsAnalyzer | null = null
   private prober: AlignmentProber | null = null
+  private loudness: LoudnessMeter | null = null
   private alignment: AlignmentReport | null = null
   private sampler: ReturnType<typeof setInterval> | undefined
   private destroyed = false
@@ -128,6 +131,21 @@ export class MonitorSession {
     this.shaper.set(profile)
   }
 
+  /**
+   * Starts or stops loudness measurement. Starting unmutes the element (the meter taps its
+   * output) and should follow a user gesture, so the browser lets the AudioContext run.
+   */
+  setLoudness(enabled: boolean): void {
+    if (enabled === !!this.loudness || this.destroyed) return
+    if (enabled) {
+      this.loudness = new LoudnessMeter(this.video, audioGraphFor(this.video), () => this.store.markDirty('loudness'))
+    } else {
+      this.loudness?.destroy()
+      this.loudness = null
+    }
+    this.store.markDirty('loudness')
+  }
+
   destroy(): void {
     if (this.destroyed) return
     this.destroyed = true
@@ -138,6 +156,8 @@ export class MonitorSession {
     this.video.removeEventListener('error', this.onMediaError)
     this.prober?.destroy()
     this.prober = null
+    this.loudness?.destroy()
+    this.loudness = null
     this.hls?.destroy()
     this.hls = null
     this.analyzer?.destroy()
@@ -418,6 +438,7 @@ export class MonitorSession {
     }
     this.samples.push(sample)
     this.store.markDirty('samples')
+    this.loudness?.sample(now)
   }
 
   // ---------------------------------------------------------------- snapshot
@@ -435,6 +456,7 @@ export class MonitorSession {
       errors: [],
       findings: [],
       alignment: null,
+      loudness: null,
     }
   }
 
@@ -457,6 +479,7 @@ export class MonitorSession {
     if (dirty.has('errors')) next.errors = this.errors.toArray()
     if (dirty.has('findings')) next.findings = this.findings.list()
     if (dirty.has('alignment')) next.alignment = this.alignment
+    if (dirty.has('loudness')) next.loudness = this.loudness?.info() ?? null
     return next
   }
 

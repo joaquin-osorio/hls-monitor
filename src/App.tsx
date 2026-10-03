@@ -7,6 +7,7 @@ import { DroppedFramesPanel } from '@/components/dropped-frames-panel'
 import { ErrorLog } from '@/components/error-log'
 import { LatencyPanel } from '@/components/latency-panel'
 import { LlHlsPanel } from '@/components/ll-hls-panel'
+import { LoudnessPanel } from '@/components/loudness-panel'
 import { NetworkTable } from '@/components/network-table'
 import { PlayerPanel } from '@/components/player-panel'
 import { PlaylistHealthPanel } from '@/components/playlist-health-panel'
@@ -34,12 +35,14 @@ function App() {
   const [video, setVideo] = useState<HTMLVideoElement | null>(null)
   // Not in the URL on purpose: a shared link should not silently throttle the recipient.
   const [throttle, setThrottle] = useState<ThrottleProfile | null>(null)
+  const [loudness, setLoudness] = useState(false)
   const { snapshot } = useMonitor({
     url: query.url,
     video,
     variant: query.variant,
     onVariantRejected: () => setQuery({ variant: 'auto' }),
     throttle,
+    loudness,
   })
   // Scoped to the URL it was opened for, so a new stream closes the inspector.
   const [inspect, setInspect] = useState<{ url: string | null; key: string } | null>(null)
@@ -78,6 +81,7 @@ function App() {
           <div className="flex flex-col gap-4">
             <PlayerPanel videoRef={setVideo} source={snapshot?.source ?? null} throttle={throttle} />
             <ThrottleControl value={throttle} onChange={setThrottle} />
+            {snapshot && <LoudnessPanel info={snapshot.loudness} enabled={loudness} onToggle={setLoudness} />}
           </div>
           {snapshot && (
             <div className="flex flex-col gap-4">

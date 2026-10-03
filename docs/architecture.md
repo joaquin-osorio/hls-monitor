@@ -27,7 +27,8 @@ hls.js ──requests──▶ MonitoringLoader (wraps Hls.DefaultConfig.loader)
 hls.js ──events────▶ ERROR → classifyHlsError → errors (+ CORS probe)
                      MANIFEST_PARSED / LEVEL_SWITCHING / LEVEL_SWITCHED → variants, selection
 <video> ──events───▶ waiting / playing / seeking → stalls; error → decode errors
-setInterval(500ms) ─▶ buffer ahead, live-edge distance, PDT latency samples
+setInterval(500ms) ─▶ buffer ahead, live-edge distance, PDT latency, frame counters; loudness chart point
+AudioWorklet ──100 ms blocks──▶ LoudnessMeter (only while enabled)
                         │
                         ▼ markDirty(slice)
                   ThrottledStore ──(≤ 1 flush / 500 ms, inside rAF)──▶ MonitorSnapshot ──▶ React
@@ -108,6 +109,27 @@ wrapper, after the real response arrived at full speed:
 - The setting lives in React state, not in the URL, so a shared link never throttles the
   recipient silently. The Player shows a "Throttled" badge while it is on. The alignment probe and
   the CORS probe are not throttled.
+
+## Loudness meter (Web Audio)
+
+- `audio/audio-graph.ts` keeps one graph per `<video>` element in a module-level `WeakMap`,
+  because `createMediaElementSource` can only be called once per element and the element
+  outlives sessions. Graph: `source → destination` (so audio stays audible) and
+  `source → AudioWorkletNode → gain(0) → destination` (the silent path keeps the worklet pulled
+  by the render graph). The node uses `channelInterpretation: 'discrete'` so BS.1770 sees the
+  real channels without up/down-mixing.
+- The worklet (`loudness.worklet.ts`, loaded with Vite's `?worker&url` so it is bundled like a
+  worker) runs `LoudnessProcessor` on the audio thread and posts one block per 100 ms.
+- `LoudnessMeter` (one per session, so integrated loudness restarts per URL) feeds the blocks to
+  `LoudnessAnalyzer` and records a 2 Hz chart series on the session's sampling tick.
+- The meter taps the element's output, so starting it sets `muted = false` and `volume = 1`, and
+  blocks are ignored (status `paused`) while the element is muted, below 100 % volume or paused.
+  The graph is created on the first "Measure loudness" click; that user gesture is what lets the
+  browser run the `AudioContext` and unmuted playback. Once created, the element's audio always
+  goes through the context, even after the meter is stopped.
+- MSE playback (what hls.js uses) is not cross-origin-tainted, so Web Audio receives real
+  samples for CORS-enabled streams. Native HLS playback (Safari without MSE) would not be
+  measurable, but the monitor only runs on hls.js.
 
 ## Variant alignment probe
 

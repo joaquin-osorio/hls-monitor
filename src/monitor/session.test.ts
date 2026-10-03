@@ -61,7 +61,10 @@ const mocks = vi.hoisted(() => {
     streams: [{ pid: 256, streamType: 0x1b, family: 'avc', minPts: 10, maxPts: 13.9, duration: 4 }],
   }
 
-  return { responses, FakeHls, analysis }
+  /** Port of the fake loudness worklet node. */
+  const audioPort = { onmessage: null as ((event: { data: unknown }) => void) | null }
+
+  return { responses, FakeHls, analysis, audioPort }
 })
 
 vi.mock('hls.js', () => ({
@@ -80,6 +83,14 @@ vi.mock('./ts/ts-client', () => ({
     analyze = () => Promise.resolve(mocks.analysis)
     destroy() {}
   },
+}))
+
+vi.mock('./audio/audio-graph', () => ({
+  audioGraphFor: () =>
+    Promise.resolve({
+      context: { resume: async () => {} },
+      meter: { port: mocks.audioPort },
+    }),
 }))
 
 vi.mock('./cors', async (importOriginal) => ({
@@ -262,6 +273,25 @@ describe('MonitorSession', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(snap.alignment).toMatchObject({ live: false, requests: 2, comparedSns: 1 })
     expect(snap.findings).toContainEqual(expect.objectContaining({ key: 'variant-alignment|extinf' }))
+  })
+
+  it('measures loudness only while enabled, unmuting the element', async () => {
+    session = new MonitorSession(MASTER_URL, video)
+    Object.assign(video, { muted: true, volume: 0.2, paused: false })
+    session.setLoudness(true)
+    expect(video).toMatchObject({ muted: false, volume: 1 })
+    await vi.waitFor(() => expect(mocks.audioPort.onmessage).not.toBeNull())
+    const energy = 10 ** ((-18 + 0.691) / 10)
+    mocks.audioPort.onmessage?.({ data: Array.from({ length: 30 }, () => ({ energy, peak: 0.25 })) })
+
+    const snap = snapshot()
+    expect(snap.loudness?.status).toBe('measuring')
+    expect(snap.loudness?.values.shortTerm).toBeCloseTo(-18)
+    expect(snap.loudness?.series.length).toBeGreaterThan(0)
+
+    session.setLoudness(false)
+    expect(snapshot().loudness).toBeNull()
+    expect(mocks.audioPort.onmessage).toBeNull()
   })
 
   it('samples frame counters and the playing level', () => {
