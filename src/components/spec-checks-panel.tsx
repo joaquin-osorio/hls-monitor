@@ -11,6 +11,7 @@ const CHECKS: { id: CheckId; label: string }[] = [
   { id: 'endlist-in-live', label: 'ENDLIST on a live playlist' },
   { id: 'codecs-missing', label: 'CODECS declared on every variant' },
   { id: 'codecs-undeclared', label: 'Segment codecs match CODECS' },
+  { id: 'ts-continuity', label: 'MPEG-TS continuity counters' },
 ]
 
 const SEVERITY_ORDER: Record<Severity, number> = { error: 0, warn: 1, info: 2 }

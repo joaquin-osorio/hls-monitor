@@ -1,7 +1,7 @@
 import type { CodecFamily } from './codecs'
 import type { RequestRecord } from './loader'
 import { TimeWindowBuffer } from './ring-buffer'
-import type { TsAnalysis } from './ts/parse-ts'
+import type { TsAnalysis, TsPidStats, TsStream } from './ts/parse-ts'
 
 /** A segment is `slow` when its download takes at least this fraction of its own duration. */
 export const SLOW_RATIO = 0.5
@@ -41,6 +41,10 @@ export interface SegmentRecord {
   ptsStart?: number
   ptsEnd?: number
   ccErrors?: number
+  /** Per-PID packet counts and continuity errors inside this segment. */
+  pids?: TsPidStats[]
+  /** Elementary streams declared in the PMT. */
+  streams?: TsStream[]
   tsError?: string
 }
 
@@ -133,6 +137,8 @@ export class SegmentLog {
           ptsStart: reference?.firstPts,
           ptsEnd: reference?.lastPts,
           ccErrors: result.ccErrors,
+          pids: result.pids,
+          streams: result.streams,
         }
       },
     )

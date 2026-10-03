@@ -101,6 +101,23 @@ describe('parseTs', () => {
     expect(parseTs(data).ccErrors).toBe(1)
   })
 
+  it('attributes continuity errors and packet counts to each PID', () => {
+    const data = segment(
+      pat(),
+      AVC_AAC,
+      pes(VIDEO_PID, 0, 1),
+      pes(AUDIO_PID, 0, 1),
+      pes(VIDEO_PID, 1, 2),
+      pes(AUDIO_PID, 5, 2), // jump on audio only
+    )
+    expect(parseTs(data).pids).toEqual([
+      { pid: 0, packets: 1, ccErrors: 0 },
+      { pid: VIDEO_PID, packets: 2, ccErrors: 0 },
+      { pid: AUDIO_PID, packets: 2, ccErrors: 1 },
+      { pid: PMT_PID, packets: 1, ccErrors: 0 },
+    ])
+  })
+
   it('counts packets without a sync byte', () => {
     const broken = pes(VIDEO_PID, 0, 1)
     broken[0] = 0x00

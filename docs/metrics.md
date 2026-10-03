@@ -44,6 +44,17 @@ types do not carry profile or level. With demuxed audio (`EXT-X-MEDIA`), video s
 contain video, so the detected set can be a subset of CODECS; only families missing *from*
 CODECS are flagged. fMP4 and AES-128 encrypted segments are not analyzed.
 
+## TS continuity (`src/monitor/continuity.ts`)
+
+The TS worker counts, per PID, packets and continuity-counter jumps: a CC that is neither the
+previous value (a legal duplicate packet) nor previous + 1 (mod 16), on packets with payload,
+unless the adaptation field sets `discontinuity_indicator`. Only jumps *inside* a segment are
+counted. HLS does not require CC to continue across segments, and many packagers restart it, so
+cross-segment checks would be noise. Null packets (PID 0x1FFF) are ignored.
+
+The panel sums packets and errors per (track, level, PID) over the analyzed segments in the
+retention window. The `ts-continuity` spec check counts affected segments per (level, PID).
+
 ## Playlist health (`src/monitor/playlist/health.ts`)
 
 Each media playlist load produces a `PlaylistRefresh`, tracked per role (`main:<level>`, ...):

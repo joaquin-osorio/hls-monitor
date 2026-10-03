@@ -56,6 +56,7 @@ const mocks = vi.hoisted(() => {
     packets: 3,
     syncErrors: 0,
     ccErrors: 0,
+    pids: [{ pid: 256, packets: 3, ccErrors: 0 }],
     families: ['avc', 'aac'],
     streams: [{ pid: 256, streamType: 0x1b, family: 'avc', firstPts: 10, lastPts: 13.9 }],
   }

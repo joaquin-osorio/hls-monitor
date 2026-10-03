@@ -1,6 +1,13 @@
 import Hls, { Events, type ErrorData, type LevelSwitchingData, type PlaylistLoaderContext } from 'hls.js'
 import type { VariantSelection } from '@/lib/query-state'
-import { checkDetectedCodecs, checkMasterPlaylist, checkMediaPlaylist, FindingsLog, type CheckObservation } from './checks'
+import {
+  checkDetectedCodecs,
+  checkMasterPlaylist,
+  checkMediaPlaylist,
+  checkTsContinuity,
+  FindingsLog,
+  type CheckObservation,
+} from './checks'
 import type { CodecFamily } from './codecs'
 import { isMixedContent, probeCors } from './cors'
 import { classifyHlsError, type MonitorError } from './errors'
@@ -136,14 +143,15 @@ export class MonitorSession {
     onTsSegment: (record, copy) => {
       const analyzer = this.analyzer
       if (this.destroyed || !analyzer || analyzer.isBusy() || record.sn === undefined || record.level === undefined) return
-      const level = record.level
+      const { level, sn } = record
       const track = record.track ?? 'main'
-      const key = segmentKey(track, level, record.sn)
+      const key = segmentKey(track, level, sn)
       analyzer.analyze(copy())?.then(
         (analysis) => {
           if (this.destroyed) return
           this.segments.attachAnalysis(key, analysis)
           if (track === 'main') this.recordDetectedCodecs(level, analysis.families)
+          this.recordFindings(checkTsContinuity(track, level, sn, record.url, analysis), performance.now())
           this.store.markDirty('segments')
         },
         (err: Error) => {

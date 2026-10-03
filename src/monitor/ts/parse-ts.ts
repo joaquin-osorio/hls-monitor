@@ -15,12 +15,22 @@ export interface TsStream {
   lastPts?: number
 }
 
+/** Packet and continuity statistics for one PID (every PID seen except null packets). */
+export interface TsPidStats {
+  pid: number
+  packets: number
+  /** Continuity counter jumps on this PID, excluding duplicates and signalled discontinuities. */
+  ccErrors: number
+}
+
 export interface TsAnalysis {
   packets: number
   /** Packets that did not start with the 0x47 sync byte (skipped). */
   syncErrors: number
   /** Continuity counter jumps on PIDs with payload, excluding signalled discontinuities. */
   ccErrors: number
+  /** Per-PID packet counts and continuity errors, sorted by PID. */
+  pids: TsPidStats[]
   streams: TsStream[]
   /** Distinct codec families across `streams`. */
   families: CodecFamily[]
@@ -138,6 +148,7 @@ export function parseTs(data: Uint8Array): TsAnalysis {
   let ccErrors = 0
   let packets = 0
   const lastCc = new Map<number, number>()
+  const pidStats = new Map<number, TsPidStats>()
   const ptsByPid = new Map<number, { first: number; last: number }>()
 
   for (let p = 0; p + PACKET_SIZE <= data.length; p += PACKET_SIZE) {
@@ -151,13 +162,19 @@ export function parseTs(data: Uint8Array): TsAnalysis {
     const end = p + PACKET_SIZE
     const payload = payloadOffset(data, p)
     if (pid === 0x1fff) continue // null packets
+    let stats = pidStats.get(pid)
+    if (!stats) pidStats.set(pid, (stats = { pid, packets: 0, ccErrors: 0 }))
+    stats.packets++
 
     if (payload !== -1) {
       const cc = data[p + 3] & 0x0f
       const discontinuity = (data[p + 3] & 0x20) !== 0 && data[p + 4] > 0 && (data[p + 5] & 0x80) !== 0
       const prev = lastCc.get(pid)
       // A repeated CC is a legal duplicate packet; anything else but +1 is a loss.
-      if (prev !== undefined && !discontinuity && cc !== prev && cc !== ((prev + 1) & 0x0f)) ccErrors++
+      if (prev !== undefined && !discontinuity && cc !== prev && cc !== ((prev + 1) & 0x0f)) {
+        ccErrors++
+        stats.ccErrors++
+      }
       lastCc.set(pid, cc)
     }
     if (payload === -1 || payload >= end || !pusi) continue
@@ -184,5 +201,6 @@ export function parseTs(data: Uint8Array): TsAnalysis {
     s.lastPts = range?.last
   }
   const families = [...new Set(streams.flatMap((s) => (s.family ? [s.family] : [])))]
-  return { packets, syncErrors, ccErrors, streams, families }
+  const pids = [...pidStats.values()].sort((a, b) => a.pid - b.pid)
+  return { packets, syncErrors, ccErrors, pids, streams, families }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkDetectedCodecs, checkMasterPlaylist, checkMediaPlaylist, FindingsLog } from './checks'
+import { checkDetectedCodecs, checkMasterPlaylist, checkMediaPlaylist, checkTsContinuity, FindingsLog } from './checks'
 import { familyOfCodecString } from './codecs'
 import { PlaylistHealthTracker } from './playlist/health'
 import { type MediaPlaylist, parsePlaylist } from './playlist/parse'
@@ -114,5 +114,27 @@ describe('FindingsLog', () => {
     expect(log.record(obs, 1)).toBe(true)
     expect(log.record(obs, 2)).toBe(false)
     expect(log.list()[0].count).toBe(1)
+  })
+})
+
+describe('checkTsContinuity', () => {
+  it('reports one observation per PID with continuity errors, keyed per level and PID', () => {
+    const analysis = {
+      pids: [
+        { pid: 0, packets: 1, ccErrors: 0 },
+        { pid: 256, packets: 900, ccErrors: 2 },
+      ],
+      streams: [{ pid: 256, streamType: 0x1b }],
+    }
+    expect(checkTsContinuity('main', 1, 42, 'https://cdn/s42.ts', analysis)).toEqual([
+      {
+        checkId: 'ts-continuity',
+        key: 'ts-continuity|main:1|256',
+        severity: 'error',
+        message: 'main 1 · PID 0x0100 (H.264): 2 continuity errors in segment 42',
+        occurrence: 42,
+        url: 'https://cdn/s42.ts',
+      },
+    ])
   })
 })

@@ -83,13 +83,14 @@ describe('SegmentLog', () => {
       packets: 10,
       syncErrors: 0,
       ccErrors: 2,
+      pids: [{ pid: 256, packets: 9, ccErrors: 2 }],
       families: ['avc', 'aac'],
       streams: [
         { pid: 257, streamType: 0x0f, family: 'aac', firstPts: 9.9, lastPts: 13.9 },
         { pid: 256, streamType: 0x1b, family: 'avc', firstPts: 10, lastPts: 13.96 },
       ],
     })
-    expect(log.toArray()[0]).toMatchObject({ codecs: ['avc', 'aac'], ptsStart: 10, ptsEnd: 13.96, ccErrors: 2 })
+    expect(log.toArray()[0]).toMatchObject({ codecs: ['avc', 'aac'], ptsStart: 10, ptsEnd: 13.96, ccErrors: 2, pids: [{ pid: 256, packets: 9, ccErrors: 2 }] })
   })
 })
 

@@ -3,7 +3,7 @@ import type { TsAnalysis } from './parse-ts'
 import type { TsJob, TsJobResult } from './protocol'
 import { TsAnalyzer } from './ts-client'
 
-const ANALYSIS: TsAnalysis = { packets: 1, syncErrors: 0, ccErrors: 0, streams: [], families: ['avc'] }
+const ANALYSIS: TsAnalysis = { packets: 1, syncErrors: 0, ccErrors: 0, pids: [], streams: [], families: ['avc'] }
 
 function fakeWorker() {
   const worker = {

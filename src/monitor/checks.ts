@@ -1,10 +1,18 @@
 import { type CodecFamily, familyOfCodecString } from './codecs'
 import type { PlaylistRefresh } from './playlist/health'
 import type { MasterPlaylist, MediaPlaylist } from './playlist/parse'
+import type { TsAnalysis } from './ts/parse-ts'
+import { formatPid, pidLabel } from './ts/stream-types'
 
 export type Severity = 'error' | 'warn' | 'info'
 
-export type CheckId = 'target-exceeded' | 'discontinuity' | 'endlist-in-live' | 'codecs-missing' | 'codecs-undeclared'
+export type CheckId =
+  | 'target-exceeded'
+  | 'discontinuity'
+  | 'endlist-in-live'
+  | 'codecs-missing'
+  | 'codecs-undeclared'
+  | 'ts-continuity'
 
 /** One raw result of a check. Observations sharing a `key` collapse into one `Finding`. */
 export interface CheckObservation {
@@ -103,6 +111,32 @@ export function checkDetectedCodecs(
       url: variantUri,
     },
   ]
+}
+
+/**
+ * One finding per (playlist, PID) whose continuity counter jumped inside segment `sn`. The count
+ * of a finding is the number of affected segments.
+ */
+export function checkTsContinuity(
+  track: string,
+  level: number,
+  sn: number,
+  url: string,
+  analysis: Pick<TsAnalysis, 'pids' | 'streams'>,
+): CheckObservation[] {
+  return analysis.pids
+    .filter((p) => p.ccErrors > 0)
+    .map((p) => {
+      const label = pidLabel(p.pid, analysis.streams.find((s) => s.pid === p.pid)?.streamType)
+      return {
+        checkId: 'ts-continuity' as const,
+        key: `ts-continuity|${track}:${level}|${p.pid}`,
+        severity: 'error' as const,
+        message: `${track} ${level} · PID ${formatPid(p.pid)} (${label}): ${p.ccErrors} continuity errors in segment ${sn}`,
+        occurrence: sn,
+        url,
+      }
+    })
 }
 
 /** Deduplicated, counted findings. Finding objects are replaced, never mutated. */
