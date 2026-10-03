@@ -5,6 +5,7 @@ import { CorsBanner } from '@/components/cors-banner'
 import { DroppedFramesPanel } from '@/components/dropped-frames-panel'
 import { ErrorLog } from '@/components/error-log'
 import { LatencyPanel } from '@/components/latency-panel'
+import { LlHlsPanel } from '@/components/ll-hls-panel'
 import { NetworkTable } from '@/components/network-table'
 import { PlayerPanel } from '@/components/player-panel'
 import { PlaylistHealthPanel } from '@/components/playlist-health-panel'
@@ -85,11 +86,12 @@ function App() {
               <NetworkTable segments={snapshot.segments} onInspect={openInspector} />
               <PlaylistHealthPanel playlists={snapshot.playlists} />
             </div>
+            <LlHlsPanel playlists={snapshot.playlists} parts={snapshot.parts} />
             <div className="grid gap-4 xl:grid-cols-2">
               <ContinuityPanel segments={snapshot.segments} />
             </div>
             <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-              <SpecChecksPanel findings={snapshot.findings} />
+              <SpecChecksPanel findings={snapshot.findings} lowLatency={snapshot.playlists.some((r) => r.ll?.partTarget !== undefined) || snapshot.parts.length > 0} />
               <ErrorLog errors={snapshot.errors} />
             </div>
             <SegmentInspector

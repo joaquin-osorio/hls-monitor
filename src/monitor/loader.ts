@@ -73,6 +73,20 @@ export function parseDeliveryDirectives(url: string): DeliveryDirectives | undef
   return directives.msn !== undefined || directives.skip !== undefined ? directives : undefined
 }
 
+/**
+ * `url` without `_HLS_*` delivery directives. Blocking reloads change the query on every refresh,
+ * so this is the stable identity used in finding keys.
+ */
+export function stripDeliveryDirectives(url: string): string {
+  try {
+    const u = new URL(url)
+    for (const name of [...u.searchParams.keys()]) if (name.startsWith('_HLS_')) u.searchParams.delete(name)
+    return u.href
+  } catch {
+    return url
+  }
+}
+
 export interface LoaderSink {
   /** Every attempt: success, error, timeout or abort. */
   onRequest(record: RequestRecord): void

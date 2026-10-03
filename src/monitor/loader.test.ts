@@ -7,7 +7,7 @@ import type {
   LoaderStats,
 } from 'hls.js'
 import { describe, expect, it, vi } from 'vitest'
-import { createMonitoringLoader, extractHeaders, type LoaderSink, parseDeliveryDirectives } from './loader'
+import { createMonitoringLoader, extractHeaders, type LoaderSink, parseDeliveryDirectives, stripDeliveryDirectives } from './loader'
 
 function stats(start: number, first: number, end: number, loaded: number): LoaderStats {
   return {
@@ -187,5 +187,12 @@ describe('parseDeliveryDirectives', () => {
     expect(parseDeliveryDirectives('https://cdn/a.m3u8?_HLS_skip=v2')).toEqual({ msn: undefined, part: undefined, skip: 'v2' })
     expect(parseDeliveryDirectives('https://cdn/a.m3u8?token=1')).toBeUndefined()
     expect(parseDeliveryDirectives('not a url')).toBeUndefined()
+  })
+})
+
+describe('stripDeliveryDirectives', () => {
+  it('removes only _HLS_ parameters', () => {
+    expect(stripDeliveryDirectives('https://cdn/a.m3u8?_HLS_msn=5&_HLS_part=1')).toBe('https://cdn/a.m3u8')
+    expect(stripDeliveryDirectives('https://cdn/a.m3u8?token=x&_HLS_skip=YES')).toBe('https://cdn/a.m3u8?token=x')
   })
 })

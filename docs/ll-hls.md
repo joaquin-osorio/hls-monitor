@@ -37,3 +37,42 @@ look like the playlist lost segments and produce false `missedSns`.
 (attached to the following segment, or `pendingParts` for the segment still being produced),
 `EXT-X-PRELOAD-HINT` (`preloadHints`), `EXT-X-RENDITION-REPORT` (`renditionReports`),
 `EXT-X-SKIP` (`skippedSegments`).
+
+## Part log and panel
+
+`PartLog` (`src/monitor/parts.ts`) keeps one record per `(track, level, SN, part)` with the
+latest attempt's hold time (TTFB), total, size and status. `LlHlsPanel` only renders once a
+playlist has LL-HLS features or a part was requested. Its numbers come from the `ll` summary
+that `summarizeLl` attaches to each `PlaylistRefresh`:
+
+- Server control and part target of the latest main playlist.
+- **Blocking reloads**: playlist loads with `_HLS_msn`; hold = TTFB. **Satisfied** means the
+  response contains segment `msn` complete, or (with `_HLS_part`) part `part` of segment `msn`
+  in the pending parts, or anything later (RFC 8216bis §6.2.5.2).
+- **Preload hints** (`LlHlsTracker`): a `TYPE=PART` hint is fulfilled when its URI appears as an
+  EXT-X-PART in a later load of the same playlist. It is unfulfilled when the segment it was
+  hinted for (the one in progress at hint time) is listed with parts but without that URI. If
+  that segment's parts already scrolled out of the playlist, no verdict is given.
+
+A refresh that only adds parts to the segment in progress counts as `changed` in playlist
+health; otherwise every part-level blocking reload would look stale.
+
+## Checks
+
+| Check | Rule |
+| --- | --- |
+| `ll-part-target` | EXT-X-PART without EXT-X-PART-INF; a part longer than PART-TARGET (+1 ms float slack). |
+| `ll-server-control` | CAN-BLOCK-RELOAD=YES missing while parts are published (warn); PART-HOLD-BACK missing, or below 2 × PART-TARGET; HOLD-BACK below 3 × TARGETDURATION (also checked on regular live playlists). |
+| `ll-blocking-reload` | A blocking reload returned a playlist without the requested MSN/part. |
+| `ll-preload-hint` | A hinted part was never published (warn). |
+
+Finding keys use the playlist URL with `_HLS_*` parameters stripped (`stripDeliveryDirectives`):
+blocking reloads change the query on every refresh, which would otherwise create a new finding
+per request. The Spec checks panel shows LL checks as "n/a" for streams without parts.
+
+## Known limitation
+
+hls.js sometimes requests the whole segment that is still being produced (e.g. after a stall,
+when it falls behind the part window). Packagers such as Mux hold that response until the
+segment is complete. Its TTFB/ratio then include hold time and the throughput (measured after
+the first byte) is inflated. There is no reliable signal in the request to tell it apart.

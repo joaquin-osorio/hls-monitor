@@ -12,8 +12,10 @@ import {
 import type { CodecFamily } from './codecs'
 import { isMixedContent, probeCors } from './cors'
 import { classifyHlsError, type MonitorError } from './errors'
-import { createMonitoringLoader, type LoaderSink, type RequestRecord } from './loader'
+import { createMonitoringLoader, stripDeliveryDirectives, type LoaderSink, type RequestRecord } from './loader'
+import { PartLog } from './parts'
 import { PlaylistHealthTracker, type PlaylistRefresh } from './playlist/health'
+import { checkLlHls, LlHlsTracker, summarizeLl } from './playlist/ll-hls'
 import { parsePlaylist, PlaylistParseError, type MediaPlaylist } from './playlist/parse'
 import { TimeWindowBuffer } from './ring-buffer'
 import { measuredBitrates, SegmentLog, segmentKey } from './segments'
@@ -50,12 +52,14 @@ export class MonitorSession {
 
   private source: SourceInfo
   private readonly segments = new SegmentLog()
+  private readonly parts = new PartLog()
   private readonly playlists = new TimeWindowBuffer<PlaylistRefresh>(4000)
   private readonly samples = new TimeWindowBuffer<Sample>(4000)
   private readonly stalls = new TimeWindowBuffer<Stall>(1000)
   private readonly errors = new TimeWindowBuffer<MonitorError>(1000)
   private readonly findings = new FindingsLog()
   private readonly health = new PlaylistHealthTracker()
+  private readonly llHls = new LlHlsTracker()
   private readonly detectedCodecs = new Map<number, Set<CodecFamily>>()
   private readonly corsProbes = new Map<string, Promise<boolean>>()
   private nextErrorId = 0
@@ -137,6 +141,7 @@ export class MonitorSession {
         this.store.markDirty('segments')
         this.store.markDirty('variants')
       }
+      if (this.parts.recordAttempt(record)) this.store.markDirty('parts')
     },
     onPlaylist: (record, text, context) => {
       if (!this.destroyed) this.handlePlaylist(record, text, context)
@@ -174,6 +179,8 @@ export class MonitorSession {
 
   private handlePlaylist(record: RequestRecord, text: string, context: PlaylistLoaderContext): void {
     const t = record.end
+    // Blocking reloads change the query on every refresh; findings need a stable URL.
+    const url = stripDeliveryDirectives(record.url)
     let playlist
     try {
       playlist = parsePlaylist(text, record.url)
@@ -186,7 +193,7 @@ export class MonitorSession {
     if (playlist.kind === 'master') {
       this.source = { ...this.source, kind: 'master' }
       this.store.markDirty('source')
-      this.recordFindings(checkMasterPlaylist(playlist, record.url), t)
+      this.recordFindings(checkMasterPlaylist(playlist, url), t)
       return
     }
 
@@ -201,12 +208,15 @@ export class MonitorSession {
     if (isMain && this.source.live !== live) this.source = { ...this.source, live }
     this.store.markDirty('source')
 
-    const refresh = this.health.track(`${track}:${level}`, record.url, playlist, t)
+    const key = `${track}:${level}`
+    const hints = this.llHls.observe(key, playlist)
+    const ll = summarizeLl(playlist, record, hints)
+    const refresh: PlaylistRefresh = { ...this.health.track(key, record.url, playlist, t), ll }
     this.playlists.push(refresh)
     this.store.markDirty('playlists')
 
     this.markGaps(playlist, refresh, track, level, t)
-    this.recordFindings(checkMediaPlaylist(playlist, record.url, refresh), t)
+    this.recordFindings([...checkMediaPlaylist(playlist, url, refresh), ...checkLlHls(playlist, url, ll, hints.newlyUnfulfilled)], t)
   }
 
   private markGaps(playlist: MediaPlaylist, refresh: PlaylistRefresh, track: string, level: number, t: number): void {
@@ -252,7 +262,10 @@ export class MonitorSession {
   private readonly onLevelSwitching = (_event: Events.LEVEL_SWITCHING, data: LevelSwitchingData): void => {
     // hls.js stops refreshing the previous level's playlist; reset its baseline so coming back
     // later is not mistaken for missed segments.
-    if (this.activeLevel !== -1 && this.activeLevel !== data.level) this.health.forget(`main:${this.activeLevel}`)
+    if (this.activeLevel !== -1 && this.activeLevel !== data.level) {
+      this.health.forget(`main:${this.activeLevel}`)
+      this.llHls.forget(`main:${this.activeLevel}`)
+    }
     this.activeLevel = data.level
     this.store.markDirty('selection')
   }
@@ -378,6 +391,7 @@ export class MonitorSession {
       variants: [],
       selection: { auto: true, currentLevel: -1, loadLevel: -1 },
       segments: [],
+      parts: [],
       playlists: [],
       samples: [],
       stalls: [],
@@ -398,6 +412,7 @@ export class MonitorSession {
         loadLevel: this.hls.loadLevel,
       }
     }
+    if (dirty.has('parts')) next.parts = this.parts.toArray()
     if (dirty.has('playlists')) next.playlists = this.playlists.toArray()
     if (dirty.has('samples')) next.samples = this.samples.toArray()
     if (dirty.has('stalls')) next.stalls = this.stalls.toArray()

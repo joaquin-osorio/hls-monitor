@@ -2,6 +2,7 @@ import type { VariantSelection } from '@/lib/query-state'
 import type { Finding } from './checks'
 import type { CodecFamily } from './codecs'
 import type { MonitorError } from './errors'
+import type { PartRecord } from './parts'
 import type { PlaylistRefresh } from './playlist/health'
 import type { SegmentRecord } from './segments'
 
@@ -73,6 +74,8 @@ export interface MonitorSnapshot {
   variants: VariantInfo[]
   selection: SelectionInfo
   segments: SegmentRecord[]
+  /** LL-HLS part requests. */
+  parts: PartRecord[]
   playlists: PlaylistRefresh[]
   samples: Sample[]
   stalls: Stall[]

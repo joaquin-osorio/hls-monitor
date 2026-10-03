@@ -216,6 +216,32 @@ describe('MonitorSession', () => {
     expect(snapshot().samples.at(-1)?.liveEdgeDistance).toBe(8)
   })
 
+  it('tracks LL-HLS parts and keys findings by the playlist URL without delivery directives', () => {
+    session = new MonitorSession(MASTER_URL, video)
+    const ll = (msn: number) =>
+      `#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-PART-INF:PART-TARGET=1\n#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES\n#EXT-X-MEDIA-SEQUENCE:${msn}\n#EXTINF:4,\ns${msn}.ts\n#EXT-X-PART:DURATION=1,URI="p.ts"\n`
+    for (const msn of [10, 11]) {
+      const url = `${LEVEL_URL}?_HLS_msn=${msn + 1}&_HLS_part=0`
+      mocks.responses.set(url, ll(msn))
+      load(url, { type: 'level', level: 0 })
+    }
+    mocks.responses.set('https://cdn.test/v0/s12.0.ts', tsSegment())
+    load('https://cdn.test/v0/s12.0.ts', {
+      type: 'media-fragment',
+      responseType: 'arraybuffer',
+      frag: { sn: 12, level: 0, type: 'main', duration: 1 },
+      part: { index: 0, duration: 1, independent: true },
+    })
+
+    const snap = snapshot()
+    expect(snap.findings.filter((f) => f.checkId === 'll-server-control')).toEqual([
+      expect.objectContaining({ key: `ll-server-control|part-hold-back-missing|${LEVEL_URL}`, count: 1 }),
+    ])
+    expect(snap.playlists.at(-1)?.ll).toMatchObject({ partTarget: 1, blocking: { msn: 12, part: 0, satisfied: true } })
+    expect(snap.parts).toEqual([expect.objectContaining({ key: 'main:0:12.0', independent: true })])
+    expect(snap.segments).toEqual([expect.objectContaining({ sn: 12, attempts: 0, partsLoaded: 1 })])
+  })
+
   it('samples frame counters and the playing level', () => {
     session = new MonitorSession(MASTER_URL, video)
     mocks.FakeHls.instance.currentLevel = 2

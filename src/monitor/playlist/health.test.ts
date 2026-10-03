@@ -88,4 +88,15 @@ describe('PlaylistHealthTracker', () => {
     const r = tracker.track('main:0', URL, delta, 2000)
     expect(r).toMatchObject({ lastSn: 20, segmentCount: 10, newSegments: 1, missedSns: [] })
   })
+
+  it('counts a refresh that only adds LL-HLS parts as changed', () => {
+    const tracker = new PlaylistHealthTracker()
+    const withParts = (n: number) => ({
+      ...live(10, 5),
+      pendingParts: Array.from({ length: n }, (_, i) => ({ uri: `p${i}.mp4`, duration: 1, independent: false, gap: false })),
+    })
+    tracker.track('main:0', URL, withParts(1), 1000)
+    expect(tracker.track('main:0', URL, withParts(2), 2000).changed).toBe(true)
+    expect(tracker.track('main:0', URL, withParts(2), 3000).changed).toBe(false)
+  })
 })

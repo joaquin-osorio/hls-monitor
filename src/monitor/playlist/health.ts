@@ -1,3 +1,4 @@
+import type { LlSummary } from './ll-hls'
 import type { MediaPlaylist } from './parse'
 
 /** Cap on how many missed sequence numbers a single refresh reports (e.g. after a sequence reset). */
@@ -21,7 +22,10 @@ export interface PlaylistRefresh {
   mediaSequenceAdvance?: number
   /** New segments appended since the previous refresh. */
   newSegments?: number
-  /** False when the playlist came back identical (no new segments, same sequence). */
+  /**
+   * False when the playlist came back identical: no new segments, same sequence and, for LL-HLS,
+   * no new parts of the segment in progress.
+   */
   changed: boolean
   /**
    * SNs that were published and already removed between two refreshes, so the client could never
@@ -30,12 +34,16 @@ export interface PlaylistRefresh {
   missedSns: number[]
   /** ENDLIST appeared on a playlist that had been refreshing without it (a live stream ended). */
   endListAppeared: boolean
+  /** LL-HLS details, when the playlist uses parts or was loaded with a blocking reload. */
+  ll?: LlSummary
 }
 
 interface PlaylistState {
   t: number
   mediaSequence: number
   lastSn: number
+  /** LL-HLS parts listed after the last complete segment. */
+  pendingParts: number
   endList: boolean
 }
 
@@ -56,7 +64,8 @@ export class PlaylistHealthTracker {
     const segmentCount = playlist.skippedSegments + playlist.segments.length
     const lastSn = playlist.mediaSequence + segmentCount - 1
     const prev = this.states.get(key)
-    this.states.set(key, { t, mediaSequence: playlist.mediaSequence, lastSn, endList: playlist.endList })
+    const pendingParts = playlist.pendingParts.length
+    this.states.set(key, { t, mediaSequence: playlist.mediaSequence, lastSn, pendingParts, endList: playlist.endList })
 
     const refresh: PlaylistRefresh = {
       t,
@@ -76,7 +85,7 @@ export class PlaylistHealthTracker {
     refresh.intervalMs = t - prev.t
     refresh.mediaSequenceAdvance = playlist.mediaSequence - prev.mediaSequence
     refresh.newSegments = Math.max(0, lastSn - prev.lastSn)
-    refresh.changed = lastSn !== prev.lastSn || playlist.mediaSequence !== prev.mediaSequence
+    refresh.changed = lastSn !== prev.lastSn || playlist.mediaSequence !== prev.mediaSequence || pendingParts !== prev.pendingParts
     refresh.endListAppeared = playlist.endList && !prev.endList
 
     // Everything between the last SN we saw and the first SN still listed was never visible.

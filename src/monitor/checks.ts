@@ -17,6 +17,10 @@ export type CheckId =
   | 'codecs-undeclared'
   | 'ts-continuity'
   | 'extinf-mismatch'
+  | 'll-part-target'
+  | 'll-server-control'
+  | 'll-blocking-reload'
+  | 'll-preload-hint'
 
 /** One raw result of a check. Observations sharing a `key` collapse into one `Finding`. */
 export interface CheckObservation {
